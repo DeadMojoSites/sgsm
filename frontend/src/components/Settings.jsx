@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
+import { getSocket } from '../services/socket';
 
-const TABS = ['General', 'Steam / SteamCMD', 'Database', 'File Locations', 'API Keys', 'Security'];
+const TABS = ['General', 'Steam / SteamCMD', 'Database', 'File Locations', 'API Keys', 'Security', 'Updates'];
 
 export default function Settings({ onSettingsSaved }) {
   const [tab,      setTab]      = useState(0);
@@ -82,6 +83,7 @@ export default function Settings({ onSettingsSaved }) {
           {tab === 3 && <FilesTab      settings={settings} set={set} save={saveSettings} saving={saving} />}
           {tab === 4 && <ApiKeysTab    settings={settings} set={set} save={saveSettings} saving={saving} />}
           {tab === 5 && <SecurityTab   showToast={showToast} />}
+          {tab === 6 && <UpdatesTab    settings={settings} set={set} save={saveSettings} saving={saving} showToast={showToast} />}
         </div>
       </div>
     </>
@@ -440,6 +442,171 @@ function SecurityTab({ showToast }) {
           </ul>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Updates ──────────────────────────────────────────────────────────────────── */
+function UpdatesTab({ settings, set, save, saving, showToast }) {
+  const [info,       setInfo]       = useState(null);
+  const [checking,   setChecking]   = useState(false);
+  const [updating,   setUpdating]   = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [lines,      setLines]      = useState([]);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    fetchInfo();
+    const socket = getSocket();
+    socket.on('update-console', ({ type, data }) => {
+      setLines(prev => [
+        ...prev,
+        ...data.split('\n').filter(l => l !== '').map(text => ({ type, text }))
+      ]);
+    });
+    socket.on('update-complete', () => {
+      setUpdating(false);
+      showToast('Update complete! Click Restart to apply.', 'success');
+      fetchInfo();
+    });
+    return () => {
+      socket.off('update-console');
+      socket.off('update-complete');
+    };
+  }, []);
+
+  // Auto-scroll console
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [lines]);
+
+  async function fetchInfo() {
+    setChecking(true);
+    try {
+      const { data } = await api.get('/update/info');
+      setInfo(data);
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Could not fetch version info', 'error');
+    } finally { setChecking(false); }
+  }
+
+  async function runUpdate() {
+    setLines([]);
+    setUpdating(true);
+    try {
+      await api.post('/update/run');
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Update failed to start', 'error');
+      setUpdating(false);
+    }
+  }
+
+  async function restartServer() {
+    setRestarting(true);
+    try {
+      await api.post('/update/restart');
+      showToast('Server is restarting… reconnect in a few seconds.', 'info');
+      setTimeout(() => window.location.reload(), 5000);
+    } catch {
+      // Expected — server killed itself
+      showToast('Server is restarting… reconnect in a few seconds.', 'info');
+      setTimeout(() => window.location.reload(), 5000);
+    }
+  }
+
+  const LINE_COLORS = {
+    stdout: 'console-line-stdout', stderr: 'console-line-stderr',
+    info:   'console-line-info',   success: 'console-line-success',
+    error:  'console-line-error'
+  };
+
+  return (
+    <div className="tab-content">
+      <div className="settings-section-title">Application Version</div>
+
+      {info && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16 }}>
+            <InfoRow label="Branch"         value={info.branch} />
+            <InfoRow label="Current Commit" value={<code style={{ fontFamily:'monospace', fontSize:'.8rem' }}>{info.short}</code>} />
+            <InfoRow label="Commit Message" value={info.message} />
+            <InfoRow label="Date"           value={new Date(info.date).toLocaleString()} />
+            <InfoRow label="Remote Origin"  value={
+              <a href={info.remote.replace(/\.git$/, '')} target="_blank" rel="noopener" style={{ wordBreak:'break-all' }}>
+                {info.remote}
+              </a>
+            } />
+            <InfoRow label="Updates Available" value={
+              <span style={{ color: info.behindCount > 0 ? 'var(--green-bright)' : 'var(--text-muted)' }}>
+                {checking ? '…' : info.behindCount > 0 ? `${info.behindCount} commit(s) behind` : 'Up to date ✓'}
+              </span>
+            } />
+          </div>
+        </div>
+      )}
+
+      <div className="settings-section-title">Repository</div>
+      <div className="form-group" style={{ marginBottom: 20, maxWidth: 520 }}>
+        <label className="form-label">Override Remote URL</label>
+        <input className="form-control" type="text"
+          placeholder="https://github.com/MBrown22073/sgsm.git"
+          value={settings.update_repo_url || ''}
+          onChange={set('update_repo_url')} />
+        <span className="form-hint">Leave blank to use the current git remote. Set this if you forked the repo or need to override the pull URL.</span>
+      </div>
+      <div style={{ display:'flex', gap: 10, marginBottom: 24 }}>
+        <button className="btn btn-secondary" onClick={() => save({ update_repo_url: settings.update_repo_url })} disabled={saving}>
+          Save URL
+        </button>
+        <button className="btn btn-ghost" onClick={fetchInfo} disabled={checking}>
+          {checking ? 'Checking…' : 'Check for Updates'}
+        </button>
+      </div>
+
+      <div className="settings-section-title">Run Update</div>
+      <div className="alert alert-warning" style={{ marginBottom: 16, maxWidth: 600 }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        This will: <strong>git pull</strong> → <strong>npm install</strong> (backend) → <strong>npm run build</strong> (frontend). A restart is required afterwards to apply changes.
+      </div>
+
+      <div style={{ display:'flex', gap: 10, marginBottom: 16 }}>
+        <button className="btn btn-primary" onClick={runUpdate} disabled={updating || restarting}>
+          {updating
+            ? <><span className="steam-spinner" style={{width:14,height:14,borderWidth:2}} /> Updating…</>
+            : <>⬇ Pull &amp; Build Update</>}
+        </button>
+        <button className="btn btn-warning" onClick={restartServer} disabled={updating || restarting}>
+          {restarting ? 'Restarting…' : '↺ Restart Server'}
+        </button>
+        {lines.length > 0 && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setLines([])}>Clear Log</button>
+        )}
+      </div>
+
+      {lines.length > 0 && (
+        <>
+          <div className="console-toolbar">
+            <span className="console-label">Update log ({lines.length} lines)</span>
+          </div>
+          <div className="console-wrapper" style={{ minHeight: 200, maxHeight: 380 }}>
+            {lines.map((line, i) => (
+              <div key={i} className={LINE_COLORS[line.type] || 'console-line-stdout'}>
+                {line.text}
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div>
+      <div style={{ fontSize: '.72rem', textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-dim)', marginBottom: 3, fontWeight: 600 }}>{label}</div>
+      <div style={{ color: 'var(--text-bright)', fontSize: '.85rem' }}>{value}</div>
     </div>
   );
 }

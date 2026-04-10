@@ -56,7 +56,8 @@ function initialize() {
     db_password:    '',
     logo_path:      '',
     setup_complete: 'false',
-    jwt_secret:     crypto.randomBytes(64).toString('hex')
+    jwt_secret:     crypto.randomBytes(64).toString('hex'),
+    update_repo_url: ''
   };
 
   for (const [k, v] of Object.entries(defaults)) ins.run(k, v);

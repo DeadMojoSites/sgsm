@@ -13,6 +13,7 @@ const serverManager = require('./services/serverManager');
 const authRoutes    = require('./routes/auth');
 const settingsRoutes = require('./routes/settings');
 const serversRoutes  = require('./routes/servers');
+const updateRoutes   = require('./routes/update');
 
 const app    = express();
 const server = http.createServer(app);
@@ -58,6 +59,7 @@ serverManager.initialize(io);
 app.use('/api/auth',     authRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/servers',  serversRoutes);
+app.use('/api/update',   updateRoutes);
 
 // ─── Serve React SPA in production ────────────────────────────────────────────
 if (IS_PROD) {
