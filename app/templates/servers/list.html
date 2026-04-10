@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Servers – SGSM{% endblock %}
+{% block page_title %}All Servers{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{{ url_for('servers.create_server') }}" class="btn btn-primary btn-sm">➕ Add Server</a>
+{% endblock %}
+
+{% block content %}
+<div class="panel">
+  {% if servers %}
+    <table class="server-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Game</th>
+          <th>App ID</th>
+          <th>Status</th>
+          <th>Port</th>
+          <th>Max Players</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in servers %}
+        <tr>
+          <td>
+            <a href="{{ url_for('servers.server_detail', server_id=s.id) }}"
+               style="color:#fff; font-weight:600">{{ s.name }}</a>
+          </td>
+          <td class="text-muted">{{ s.game_name }}</td>
+          <td class="font-mono text-muted">{{ s.app_id }}</td>
+          <td>
+            <span class="badge badge-{{ s.status }}">
+              {{ s.status.replace('_', ' ').title() }}
+            </span>
+          </td>
+          <td class="font-mono text-muted">{{ s.port or '—' }}</td>
+          <td class="text-muted">{{ s.max_players }}</td>
+          <td>
+            <div class="d-flex gap-8">
+              <a href="{{ url_for('servers.server_detail', server_id=s.id) }}"
+                 class="btn btn-ghost btn-sm">Manage</a>
+
+              {% if s.status == 'running' %}
+                <form method="post" action="{{ url_for('servers.stop', server_id=s.id) }}" style="display:inline">
+                  <button class="btn btn-danger btn-sm" data-confirm="Stop {{ s.name }}?">■ Stop</button>
+                </form>
+              {% elif s.status == 'stopped' %}
+                <form method="post" action="{{ url_for('servers.start', server_id=s.id) }}" style="display:inline">
+                  <button class="btn btn-success btn-sm">▶ Start</button>
+                </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state-icon">🖥</div>
+      <h3>No servers configured</h3>
+      <p>Add your first game server to get started. SGSM will download and install it via SteamCMD.</p>
+      <a href="{{ url_for('servers.create_server') }}" class="btn btn-primary">➕ Add Server</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

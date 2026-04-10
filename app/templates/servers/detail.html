@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}{{ server.name }} – SGSM{% endblock %}
+{% block page_title %}{{ server.name }}{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{{ url_for('servers.list_servers') }}" class="btn btn-ghost btn-sm">← Servers</a>
+  <a href="{{ url_for('servers.edit_server', server_id=server.id) }}" class="btn btn-secondary btn-sm">✏ Edit</a>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="server-hero">
+  <div class="server-hero-icon">🎮</div>
+  <div class="server-hero-info" style="flex:1">
+    <h2>{{ server.name }}</h2>
+    <p>
+      {{ server.game_name or "Unknown Game" }}
+      &nbsp;·&nbsp; App ID: <span class="font-mono">{{ server.app_id }}</span>
+      {% if server.port %}
+        &nbsp;·&nbsp; Port: <span class="font-mono">{{ server.port }}</span>
+      {% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-8 align-center">
+    <span class="badge badge-{{ server.status }}"
+          id="server-status-badge"
+          data-server-id="{{ server.id }}"
+          data-status="{{ server.status }}">
+      {{ server.status.replace('_', ' ').title() }}
+    </span>
+    <span class="text-muted font-mono" style="font-size:11px" id="server-pid">
+      {% if server.pid %}PID {{ server.pid }}{% else %}—{% endif %}
+    </span>
+  </div>
+</div>
+
+<!-- Install progress (shown when installing/updating) -->
+{% if server.status in ('installing', 'updating') %}
+<div class="panel mb-20" id="install-progress">
+  <div class="panel-body">
+    <div class="d-flex align-center gap-12">
+      <div style="flex:1">
+        <div style="font-size:13px; color:var(--steam-text); margin-bottom:8px">
+          {% if server.status == 'installing' %}Downloading &amp; installing server files…{% else %}Updating server files…{% endif %}
+          <span class="text-muted">(this may take a while)</span>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Action buttons -->
+<div class="d-flex gap-8 mb-20 align-center">
+  {% if server.status == 'stopped' or server.status == 'error' %}
+    <form method="post" action="{{ url_for('servers.start', server_id=server.id) }}">
+      <button class="btn btn-success">▶ Start</button>
+    </form>
+    <form method="post" action="{{ url_for('servers.install', server_id=server.id) }}">
+      <button class="btn btn-primary"
+              data-confirm="This will (re)install server files via SteamCMD. Continue?">
+        ⬇ Install / Reinstall
+      </button>
+    </form>
+    <form method="post" action="{{ url_for('servers.update', server_id=server.id) }}">
+      <button class="btn btn-secondary">↻ Update</button>
+    </form>
+  {% elif server.status == 'running' %}
+    <form method="post" action="{{ url_for('servers.stop', server_id=server.id) }}">
+      <button class="btn btn-danger" data-confirm="Stop {{ server.name }}?">■ Stop</button>
+    </form>
+    <form method="post" action="{{ url_for('servers.restart', server_id=server.id) }}">
+      <button class="btn btn-warning" data-confirm="Restart {{ server.name }}?">↺ Restart</button>
+    </form>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('servers.delete_server', server_id=server.id) }}"
+        style="margin-left:auto">
+    <button class="btn btn-ghost btn-sm"
+            data-confirm="Permanently delete '{{ server.name }}'? This cannot be undone.">
+      🗑 Delete
+    </button>
+  </form>
+</div>
+
+<!-- Info + Log grid -->
+<div class="grid-2" style="gap:20px; align-items:start">
+  <!-- Server info -->
+  <div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-header-title">ℹ Server Details</span>
+      </div>
+      <div class="panel-body">
+        <table style="width:100%; border-collapse:collapse">
+          <tr>
+            <td class="text-muted" style="padding:6px 0; width:140px; font-size:12px">App ID</td>
+            <td class="font-mono">{{ server.app_id }}</td>
+          </tr>
+          <tr>
+            <td class="text-muted" style="padding:6px 0; font-size:12px">Install Directory</td>
+            <td class="font-mono" style="word-break:break-all; font-size:11px">{{ server.install_dir }}</td>
+          </tr>
+          <tr>
+            <td class="text-muted" style="padding:6px 0; font-size:12px">Executable</td>
+            <td class="font-mono">{{ server.executable or '—' }}</td>
+          </tr>
+          <tr>
+            <td class="text-muted" style="padding:6px 0; font-size:12px">Launch Args</td>
+            <td class="font-mono" style="font-size:11px; word-break:break-all">{{ server.launch_args or '—' }}</td>
+          </tr>
+          <tr>
+            <td class="text-muted" style="padding:6px 0; font-size:12px">Port</td>
+            <td class="font-mono">{{ server.port or '—' }}</td>
+          </tr>
+          <tr>
+            <td class="text-muted" style="padding:6px 0; font-size:12px">Max Players</td>
+            <td>{{ server.max_players }}</td>
+          </tr>
+          <tr>
+            <td class="text-muted" style="padding:6px 0; font-size:12px">Auto-Restart</td>
+            <td>
+              {% if server.auto_restart %}
+                <span class="text-green">✔ Enabled</span>
+              {% else %}
+                <span class="text-muted">Disabled</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td class="text-muted" style="padding:6px 0; font-size:12px">Password</td>
+            <td>{{ '●●●●●●' if server.password else '—' }}</td>
+          </tr>
+          <tr>
+            <td class="text-muted" style="padding:6px 0; font-size:12px">Created</td>
+            <td class="text-muted" style="font-size:11px">
+              {{ server.created_at.strftime('%Y-%m-%d %H:%M') }}
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log console -->
+  <div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-header-title">📋 Server Log</span>
+        <span class="text-muted" style="font-size:11px">Last {{ logs|length }} entries</span>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <div class="log-console"
+             id="log-console"
+             data-server-id="{{ server.id }}"
+             data-last-id="{{ logs[-1].id if logs else 0 }}">
+          {% if logs %}
+            {% for entry in logs %}
+              <div class="log-entry {{ entry.level }}">
+                <span class="ts">{{ entry.created_at.strftime('%H:%M:%S') }}</span>
+                <span class="msg">{{ entry.message }}</span>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div style="color:var(--steam-text-dim); text-align:center; padding:20px">
+              No log entries yet.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+services:
+  sgsm:
+    build: .
+    container_name: sgsm
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Application data (SQLite database, config)
+      - sgsm_data:/data
+      # SteamCMD installation
+      - steamcmd:/steamcmd
+      # Game server files
+      - game_servers:/servers
+    environment:
+      - SGSM_DATA_DIR=/data
+      - SGSM_SERVERS_DIR=/servers
+      - SGSM_STEAMCMD_DIR=/steamcmd
+      # Optional: set a fixed secret key for persistent sessions
+      # - SECRET_KEY=change_me_to_a_random_string
+      # Optional: use an external PostgreSQL or MySQL database
+      # - DATABASE_URL=postgresql://user:pass@db:5432/sgsm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  sgsm_data:
+  steamcmd:
+  game_servers:

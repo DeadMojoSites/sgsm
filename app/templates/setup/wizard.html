@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup Wizard – SGSM</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/steam.css') }}">
+</head>
+<body>
+<div class="setup-wrap">
+  <div class="setup-card">
+    <!-- Header -->
+    <div class="setup-header">
+      <div class="setup-logo-icon">⚙</div>
+      <div class="setup-header-text">
+        <h1>SGSM Setup</h1>
+        <p>Steam Game Server Manager – First-Time Configuration</p>
+      </div>
+    </div>
+
+    <!-- Step indicators -->
+    <div class="setup-steps">
+      {% set steps = ['Account', 'Paths', 'SteamCMD', 'API Key', 'Done'] %}
+      {% for label in steps %}
+        <div class="setup-step {% if loop.index == step %}active{% elif loop.index < step %}done{% endif %}">
+          {{ label }}
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- Flash messages -->
+    <div style="padding: 16px 32px 0">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">
+            <span class="alert-icon">
+              {% if category == 'success' %}✔{% elif category == 'error' %}✖{% elif category == 'warning' %}⚠{% else %}ℹ{% endif %}
+            </span>
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endwith %}
+    </div>
+
+    {% if error %}
+      <div style="padding: 16px 32px 0">
+        <div class="alert alert-error"><span class="alert-icon">✖</span>{{ error }}</div>
+      </div>
+    {% endif %}
+
+    <div class="setup-body">
+
+      <!-- ── Step 1: Account ── -->
+      {% if step == 1 %}
+      <h2 style="color:#fff; font-size:17px; margin-bottom:6px">👤 Create Admin Account</h2>
+      <p class="text-muted mb-20" style="font-size:13px">
+        Set the site title and a password for the admin panel.
+      </p>
+      <form method="post" action="{{ url_for('setup.wizard', step=1) }}">
+        <input type="hidden" name="action" value="step1">
+        <div class="form-group">
+          <label class="form-label" for="site_title">Site Title</label>
+          <input id="site_title" name="site_title" type="text" class="form-control"
+                 value="{{ settings.site_title }}" placeholder="SGSM – Game Server Manager">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="admin_password">Admin Password *</label>
+          <input id="admin_password" name="admin_password" type="password" class="form-control"
+                 placeholder="Min. 6 characters" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%">Next →</button>
+      </form>
+
+      <!-- ── Step 2: Paths ── -->
+      {% elif step == 2 %}
+      <h2 style="color:#fff; font-size:17px; margin-bottom:6px">📁 Configure Paths</h2>
+      <p class="text-muted mb-20" style="font-size:13px">
+        Tell SGSM where to store server files, SteamCMD, and application data.
+      </p>
+      <form method="post" action="{{ url_for('setup.wizard', step=2) }}">
+        <input type="hidden" name="action" value="step2">
+        <div class="form-group">
+          <label class="form-label" for="servers_dir">Game Servers Directory</label>
+          <input id="servers_dir" name="servers_dir" type="text" class="form-control"
+                 value="{{ settings.servers_dir }}" placeholder="/servers">
+          <span class="form-hint">Each managed server will be installed in a subdirectory here.</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="steamcmd_dir">SteamCMD Directory</label>
+          <input id="steamcmd_dir" name="steamcmd_dir" type="text" class="form-control"
+                 value="{{ settings.steamcmd_dir }}" placeholder="/steamcmd">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="data_dir">Application Data Directory</label>
+          <input id="data_dir" name="data_dir" type="text" class="form-control"
+                 value="{{ settings.data_dir }}" placeholder="/data">
+          <span class="form-hint">Stores the SGSM database and configuration.</span>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%">Next →</button>
+      </form>
+
+      <!-- ── Step 3: SteamCMD ── -->
+      {% elif step == 3 %}
+      <h2 style="color:#fff; font-size:17px; margin-bottom:6px">🔧 Install SteamCMD</h2>
+      <p class="text-muted mb-20" style="font-size:13px">
+        SteamCMD is required to download and update game server files.
+      </p>
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-body">
+          {% if steamcmd_installed %}
+            <div class="d-flex align-center gap-12">
+              <span style="font-size:28px">✅</span>
+              <div>
+                <div style="color:var(--steam-green); font-weight:600">SteamCMD is already installed</div>
+                <div class="text-muted" style="font-size:12px">You can proceed to the next step.</div>
+              </div>
+            </div>
+          {% else %}
+            <div class="d-flex align-center gap-12">
+              <span style="font-size:28px">⬇</span>
+              <div>
+                <div style="color:#fff; font-weight:600">SteamCMD is not installed</div>
+                <div class="text-muted" style="font-size:12px">
+                  Click the button below to download and install it automatically.
+                </div>
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+      <form method="post" action="{{ url_for('setup.wizard', step=3) }}">
+        <input type="hidden" name="action" value="step3">
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%">
+          {% if steamcmd_installed %}✔ Skip / Already Installed →{% else %}⬇ Install SteamCMD & Next →{% endif %}
+        </button>
+      </form>
+
+      <!-- ── Step 4: API Key ── -->
+      {% elif step == 4 %}
+      <h2 style="color:#fff; font-size:17px; margin-bottom:6px">🔑 Steam API Key</h2>
+      <p class="text-muted mb-20" style="font-size:13px">
+        A Steam Web API key enables game metadata lookups. This is optional.
+      </p>
+      <form method="post" action="{{ url_for('setup.wizard', step=4) }}">
+        <input type="hidden" name="action" value="step4">
+        <div class="form-group">
+          <label class="form-label" for="steam_api_key">Steam Web API Key</label>
+          <input id="steam_api_key" name="steam_api_key" type="text" class="form-control"
+                 value="{{ settings.steam_api_key }}" placeholder="Leave blank to skip">
+          <span class="form-hint">
+            Get a key at
+            <a href="https://steamcommunity.com/dev/apikey" target="_blank">steamcommunity.com/dev/apikey</a>
+          </span>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%">Next →</button>
+      </form>
+
+      <!-- ── Step 5: Done ── -->
+      {% elif step == 5 %}
+      <div style="text-align:center; padding:16px 0">
+        <div style="font-size:56px; margin-bottom:16px">🎉</div>
+        <h2 style="color:#fff; font-size:22px; margin-bottom:8px">All done!</h2>
+        <p class="text-muted" style="font-size:13px; margin-bottom:24px">
+          SGSM is configured and ready to manage your game servers.
+        </p>
+        <form method="post" action="{{ url_for('setup.wizard') }}">
+          <input type="hidden" name="action" value="finish">
+          <button type="submit" class="btn btn-success btn-lg">
+            🚀 Launch SGSM Dashboard
+          </button>
+        </form>
+      </div>
+      {% endif %}
+
+    </div><!-- /.setup-body -->
+  </div><!-- /.setup-card -->
+</div><!-- /.setup-wrap -->
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

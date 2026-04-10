@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% set site_title = settings_site_title ~ " – Dashboard" if settings_site_title is defined else "SGSM – Dashboard" %}
+
+{% block title %}Dashboard – SGSM{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{{ url_for('servers.create_server') }}" class="btn btn-primary btn-sm">
+    ➕ Add Server
+  </a>
+{% endblock %}
+
+{% block content %}
+<!-- Stat grid -->
+<div class="stat-grid mb-24">
+  <div class="stat-card running">
+    <div class="stat-value">{{ running }}</div>
+    <div class="stat-label">Running</div>
+  </div>
+  <div class="stat-card stopped">
+    <div class="stat-value">{{ stopped }}</div>
+    <div class="stat-label">Stopped</div>
+  </div>
+  <div class="stat-card error">
+    <div class="stat-value">{{ error }}</div>
+    <div class="stat-label">Error</div>
+  </div>
+  <div class="stat-card updating">
+    <div class="stat-value">{{ installing }}</div>
+    <div class="stat-label">Installing / Updating</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:var(--steam-blue)">{{ servers|length }}</div>
+    <div class="stat-label">Total Servers</div>
+  </div>
+</div>
+
+<div class="grid-2" style="gap:20px">
+  <!-- Server list preview -->
+  <div class="panel" style="grid-column: 1 / -1">
+    <div class="panel-header">
+      <span class="panel-header-title">🖥 Managed Servers</span>
+      <a href="{{ url_for('servers.list_servers') }}" class="btn btn-ghost btn-sm">View All</a>
+    </div>
+    {% if servers %}
+      <table class="server-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Game / App ID</th>
+            <th>Status</th>
+            <th>Port</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in servers[:8] %}
+          <tr>
+            <td>
+              <a href="{{ url_for('servers.server_detail', server_id=s.id) }}"
+                 style="color:#fff; font-weight:600">{{ s.name }}</a>
+            </td>
+            <td class="text-muted">{{ s.game_name or s.app_id }}</td>
+            <td>
+              <span class="badge badge-{{ s.status }}">
+                {{ s.status.replace('_', ' ').title() }}
+              </span>
+            </td>
+            <td class="text-muted font-mono">{{ s.port or '—' }}</td>
+            <td>
+              <a href="{{ url_for('servers.server_detail', server_id=s.id) }}"
+                 class="btn btn-ghost btn-sm">Manage</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state-icon">🖥</div>
+        <h3>No servers yet</h3>
+        <p>Add your first game server to get started.</p>
+        <a href="{{ url_for('servers.create_server') }}" class="btn btn-primary">➕ Add Server</a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- System resources -->
+<div class="panel mt-20">
+  <div class="panel-header">
+    <span class="panel-header-title">💻 System Resources</span>
+    <span class="text-muted" style="font-size:11px">{{ platform }}</span>
+  </div>
+  <div class="panel-body">
+    <div class="grid-3">
+      <div>
+        <div class="resource-bar-wrap">
+          <div class="resource-bar-label">
+            <span>CPU Usage</span>
+            <span>{{ cpu | round(1) }}%</span>
+          </div>
+          <div class="resource-bar">
+            <div class="resource-bar-fill" style="width: {{ cpu | round(1) }}%"></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="resource-bar-wrap">
+          {% set ram_pct = ((ram_used / ram_total) * 100) | round(1) if ram_total > 0 else 0 %}
+          <div class="resource-bar-label">
+            <span>RAM</span>
+            <span>{{ ram_used }} MB / {{ ram_total }} MB</span>
+          </div>
+          <div class="resource-bar">
+            <div class="resource-bar-fill" style="width: {{ ram_pct }}%"></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="resource-bar-wrap">
+          {% set disk_pct = ((disk_used / disk_total) * 100) | round(1) if disk_total > 0 else 0 %}
+          <div class="resource-bar-label">
+            <span>Disk</span>
+            <span>{{ disk_used }} GB / {{ disk_total }} GB</span>
+          </div>
+          <div class="resource-bar">
+            <div class="resource-bar-fill" style="width: {{ disk_pct }}%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ server.name }} – SGSM{% endblock %}
+{% block page_title %}Edit {{ server.name }}{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{{ url_for('servers.server_detail', server_id=server.id) }}" class="btn btn-ghost btn-sm">← Back</a>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+  <div class="alert alert-error"><span class="alert-icon">✖</span>{{ error }}</div>
+{% endif %}
+
+<div style="max-width:700px">
+  <form method="post">
+    <div class="panel mb-20">
+      <div class="panel-header">
+        <span class="panel-header-title">🖥 Server Identity</span>
+      </div>
+      <div class="panel-body">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label" for="name">Server Name *</label>
+            <input id="name" name="name" type="text" class="form-control"
+                   value="{{ server.name }}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="game_name">Game Name</label>
+            <input id="game_name" name="game_name" type="text" class="form-control"
+                   value="{{ server.game_name }}">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">App ID</label>
+          <input type="text" class="form-control" value="{{ server.app_id }}" readonly>
+          <span class="form-hint">App ID cannot be changed after creation.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel mb-20">
+      <div class="panel-header">
+        <span class="panel-header-title">🚀 Launch Configuration</span>
+      </div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label" for="executable">Executable</label>
+          <input id="executable" name="executable" type="text" class="form-control"
+                 value="{{ server.executable }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="launch_args">Launch Arguments</label>
+          <textarea id="launch_args" name="launch_args" class="form-control">{{ server.launch_args }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel mb-20">
+      <div class="panel-header">
+        <span class="panel-header-title">🌐 Network &amp; Players</span>
+      </div>
+      <div class="panel-body">
+        <div class="grid-3">
+          <div class="form-group">
+            <label class="form-label" for="port">Port</label>
+            <input id="port" name="port" type="number" class="form-control"
+                   value="{{ server.port or '' }}" min="1" max="65535">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="max_players">Max Players</label>
+            <input id="max_players" name="max_players" type="number" class="form-control"
+                   value="{{ server.max_players }}" min="1" max="1000">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="password">Server Password</label>
+            <input id="password" name="password" type="password" class="form-control"
+                   value="{{ server.password }}">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-check">
+            <input type="checkbox" name="auto_restart" {% if server.auto_restart %}checked{% endif %}>
+            <span>Auto-restart server if it crashes</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-12">
+      <button type="submit" class="btn btn-primary">Save Changes</button>
+      <a href="{{ url_for('servers.server_detail', server_id=server.id) }}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

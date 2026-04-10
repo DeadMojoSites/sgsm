@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Settings – SGSM{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="tabs-container">
+  <div class="tabs">
+    <div class="tab active" data-tab="general">⚙ General</div>
+    <div class="tab" data-tab="paths">📁 Paths</div>
+    <div class="tab" data-tab="steamcmd">🔧 SteamCMD</div>
+    <div class="tab" data-tab="steam">🎮 Steam</div>
+    <div class="tab" data-tab="security">🔒 Security</div>
+  </div>
+
+  <!-- General -->
+  <div id="tab-general" class="tab-pane active">
+    <div class="panel" style="max-width:600px">
+      <div class="panel-header"><span class="panel-header-title">General Settings</span></div>
+      <div class="panel-body">
+        <form method="post">
+          <input type="hidden" name="section" value="general">
+          <div class="form-group">
+            <label class="form-label" for="site_title">Site Title</label>
+            <input id="site_title" name="site_title" type="text" class="form-control"
+                   value="{{ settings.site_title }}">
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label class="form-label" for="max_servers">Max Servers</label>
+              <input id="max_servers" name="max_servers" type="number" class="form-control"
+                     value="{{ settings.max_servers }}" min="1" max="100">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="log_lines">Log Lines to Display</label>
+              <input id="log_lines" name="log_lines" type="number" class="form-control"
+                     value="{{ settings.log_lines }}" min="50" max="5000">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-check">
+              <input type="checkbox" name="auto_restart"
+                     {% if settings.auto_restart == 'true' %}checked{% endif %}>
+              <span>Auto-restart crashed servers globally</span>
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paths -->
+  <div id="tab-paths" class="tab-pane">
+    <div class="panel" style="max-width:600px">
+      <div class="panel-header"><span class="panel-header-title">File System Paths</span></div>
+      <div class="panel-body">
+        <form method="post">
+          <input type="hidden" name="section" value="paths">
+          <div class="form-group">
+            <label class="form-label" for="servers_dir">Game Servers Directory</label>
+            <input id="servers_dir" name="servers_dir" type="text" class="form-control"
+                   value="{{ settings.servers_dir }}">
+            <span class="form-hint">Parent directory for all managed server installs.</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="steamcmd_dir">SteamCMD Directory</label>
+            <input id="steamcmd_dir" name="steamcmd_dir" type="text" class="form-control"
+                   value="{{ settings.steamcmd_dir }}">
+          </div>
+          <button type="submit" class="btn btn-primary">Save Paths</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- SteamCMD -->
+  <div id="tab-steamcmd" class="tab-pane">
+    <div class="panel" style="max-width:600px">
+      <div class="panel-header"><span class="panel-header-title">SteamCMD</span></div>
+      <div class="panel-body">
+        <div class="d-flex align-center gap-12" style="margin-bottom:20px">
+          <span style="font-size:28px">{{ '✅' if steamcmd_installed else '❌' }}</span>
+          <div>
+            <div style="font-weight:600; color:{% if steamcmd_installed %}var(--steam-green){% else %}var(--steam-red){% endif %}">
+              SteamCMD is {% if steamcmd_installed %}installed{% else %}NOT installed{% endif %}
+            </div>
+            <div class="text-muted" style="font-size:12px">
+              Path: <span class="font-mono">{{ settings.steamcmd_dir }}</span>
+            </div>
+          </div>
+        </div>
+        <form method="post">
+          <input type="hidden" name="section" value="steamcmd_install">
+          <button type="submit" class="btn btn-primary"
+                  data-confirm="This will download and install SteamCMD. Continue?">
+            {% if steamcmd_installed %}↻ Reinstall SteamCMD{% else %}⬇ Install SteamCMD{% endif %}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Steam API -->
+  <div id="tab-steam" class="tab-pane">
+    <div class="panel" style="max-width:600px">
+      <div class="panel-header"><span class="panel-header-title">Steam Web API</span></div>
+      <div class="panel-body">
+        <form method="post">
+          <input type="hidden" name="section" value="steam">
+          <div class="form-group">
+            <label class="form-label" for="steam_api_key">Steam Web API Key</label>
+            <input id="steam_api_key" name="steam_api_key" type="text" class="form-control"
+                   value="{{ settings.steam_api_key }}" placeholder="Optional">
+            <span class="form-hint">
+              Get a key at
+              <a href="https://steamcommunity.com/dev/apikey" target="_blank">steamcommunity.com/dev/apikey</a>
+            </span>
+          </div>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Security -->
+  <div id="tab-security" class="tab-pane">
+    <div class="panel" style="max-width:600px">
+      <div class="panel-header"><span class="panel-header-title">Security</span></div>
+      <div class="panel-body">
+        <form method="post">
+          <input type="hidden" name="section" value="security">
+          <div class="form-group">
+            <label class="form-label" for="new_password">New Admin Password</label>
+            <input id="new_password" name="new_password" type="password" class="form-control"
+                   placeholder="Min. 6 characters">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="confirm_password">Confirm Password</label>
+            <input id="confirm_password" name="confirm_password" type="password" class="form-control"
+                   placeholder="Re-enter new password">
+          </div>
+          <button type="submit" class="btn btn-primary">Update Password</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.tabs-container -->
+{% endblock %}

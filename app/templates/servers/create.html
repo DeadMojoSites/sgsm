@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Add Server – SGSM{% endblock %}
+{% block page_title %}Add Game Server{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{{ url_for('servers.list_servers') }}" class="btn btn-ghost btn-sm">← Back to Servers</a>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+  <div class="alert alert-error"><span class="alert-icon">✖</span>{{ error }}</div>
+{% endif %}
+
+<div style="max-width:700px">
+  <form method="post">
+    <!-- Game Preset -->
+    <div class="panel mb-20">
+      <div class="panel-header">
+        <span class="panel-header-title">🎮 Quick Preset</span>
+      </div>
+      <div class="panel-body">
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Popular Game Server</label>
+          <select id="game-preset" class="form-control">
+            <option value="">— Select a game to auto-fill —</option>
+            {% for game in popular_games %}
+              <option value="{{ game.app_id }}|{{ game.name }}">
+                {{ game.name }} ({{ game.app_id }})
+              </option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">Selecting a preset will fill in the App ID and game name below.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Server Identity -->
+    <div class="panel mb-20">
+      <div class="panel-header">
+        <span class="panel-header-title">🖥 Server Identity</span>
+      </div>
+      <div class="panel-body">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label" for="name">Server Name *</label>
+            <input id="name" name="name" type="text" class="form-control"
+                   placeholder="My TF2 Server" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="game_name">Game Name</label>
+            <input id="game_name" name="game_name" type="text" class="form-control"
+                   placeholder="Team Fortress 2">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="app_id">Steam App ID *</label>
+          <input id="app_id" name="app_id" type="text" class="form-control"
+                 placeholder="232250" required>
+          <span class="form-hint">
+            Find the App ID on
+            <a href="https://steamdb.info/search/?a=app&q=server" target="_blank">SteamDB</a>.
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Install Location -->
+    <div class="panel mb-20">
+      <div class="panel-header">
+        <span class="panel-header-title">📁 Install Location</span>
+      </div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label" for="install_dir">Install Directory</label>
+          <input id="install_dir" name="install_dir" type="text" class="form-control"
+                 placeholder="{{ servers_dir }}/my-tf2-server">
+          <span class="form-hint">Leave blank to use <code class="font-mono">{{ servers_dir }}/&lt;server-name&gt;</code></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Launch Configuration -->
+    <div class="panel mb-20">
+      <div class="panel-header">
+        <span class="panel-header-title">🚀 Launch Configuration</span>
+      </div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label" for="executable">Executable</label>
+          <input id="executable" name="executable" type="text" class="form-control"
+                 placeholder="srcds_run  or  srcds.exe">
+          <span class="form-hint">Relative to the install directory. Leave blank if you plan to configure it later.</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="launch_args">Launch Arguments</label>
+          <textarea id="launch_args" name="launch_args" class="form-control"
+                    placeholder="-game tf -port 27015 -maxplayers 24"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Network & Players -->
+    <div class="panel mb-20">
+      <div class="panel-header">
+        <span class="panel-header-title">🌐 Network &amp; Players</span>
+      </div>
+      <div class="panel-body">
+        <div class="grid-3">
+          <div class="form-group">
+            <label class="form-label" for="port">Server Port</label>
+            <input id="port" name="port" type="number" class="form-control"
+                   placeholder="27015" min="1" max="65535">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="max_players">Max Players</label>
+            <input id="max_players" name="max_players" type="number" class="form-control"
+                   value="16" min="1" max="1000">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="password">Server Password</label>
+            <input id="password" name="password" type="password" class="form-control"
+                   placeholder="optional">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-check">
+            <input type="checkbox" name="auto_restart">
+            <span>Auto-restart server if it crashes</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Install now? -->
+    <div class="panel mb-20">
+      <div class="panel-header">
+        <span class="panel-header-title">⬇ Installation</span>
+      </div>
+      <div class="panel-body">
+        <label class="form-check">
+          <input type="checkbox" name="do_install" checked>
+          <span>Download &amp; install server files via SteamCMD immediately</span>
+        </label>
+        <span class="form-hint mt-8" style="display:block">
+          Unchecking will create the server entry without downloading files. You can install later from the server page.
+        </span>
+      </div>
+    </div>
+
+    <div class="d-flex gap-12">
+      <button type="submit" class="btn btn-primary btn-lg">Create Server</button>
+      <a href="{{ url_for('servers.list_servers') }}" class="btn btn-ghost btn-lg">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

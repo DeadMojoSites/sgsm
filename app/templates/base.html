@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ site_title }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/steam.css') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+<div class="layout">
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <a href="{{ url_for('main.index') }}" class="sidebar-logo">
+      <div class="sidebar-logo-icon">⚙</div>
+      <div class="sidebar-logo-text">
+        SGSM
+        <span>Game Server Manager</span>
+      </div>
+    </a>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Overview</div>
+      <a href="{{ url_for('main.index') }}"
+         class="nav-item {% if request.endpoint == 'main.index' %}active{% endif %}">
+        <span class="icon">🏠</span> Dashboard
+      </a>
+
+      <div class="nav-section-label" style="margin-top:12px">Servers</div>
+      <a href="{{ url_for('servers.list_servers') }}"
+         class="nav-item {% if request.endpoint and request.endpoint.startswith('servers.') %}active{% endif %}">
+        <span class="icon">🖥</span> All Servers
+      </a>
+      <a href="{{ url_for('servers.create_server') }}"
+         class="nav-item">
+        <span class="icon">➕</span> Add Server
+      </a>
+
+      <div class="nav-section-label" style="margin-top:12px">System</div>
+      <a href="{{ url_for('settings.index') }}"
+         class="nav-item {% if request.endpoint and request.endpoint.startswith('settings.') %}active{% endif %}">
+        <span class="icon">⚙</span> Settings
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div>SGSM v1.0</div>
+      <div style="margin-top:3px">Powered by SteamCMD</div>
+    </div>
+  </aside>
+
+  <!-- ── Main wrap ── -->
+  <div class="main-wrap">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-title">{% block page_title %}{% endblock %}</div>
+      <div class="topbar-actions">{% block topbar_actions %}{% endblock %}</div>
+    </header>
+
+    <!-- Flash messages -->
+    <div style="padding: 0 28px; margin-top: 16px;">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}" data-autohide>
+            <span class="alert-icon">
+              {% if category == 'success' %}✔{% elif category == 'error' %}✖{% elif category == 'warning' %}⚠{% else %}ℹ{% endif %}
+            </span>
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endwith %}
+    </div>
+
+    <!-- Page content -->
+    <main class="page-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>
