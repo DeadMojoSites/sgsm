@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+  game-server-manager:
+    build: .
+    container_name: game-server-manager
+    ports:
+      - "8080:8080"
+    volumes:
+      - gsm_data:/app/data          # SQLite DB, uploads, config
+      - gsm_steamcmd:/opt/steamcmd  # SteamCMD binaries & cache
+      - gsm_servers:/opt/servers    # Installed game servers
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - DATA_DIR=/app/data
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  # ── Optional: local MySQL (uncomment to use) ──────────────────────────────
+  # mysql:
+  #   image: mysql:8
+  #   container_name: gsm-mysql
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: changeme
+  #     MYSQL_DATABASE: gameservers
+  #     MYSQL_USER: gsm
+  #     MYSQL_PASSWORD: changeme
+  #   volumes:
+  #     - gsm_mysql:/var/lib/mysql
+  #   ports:
+  #     - "3306:3306"
+
+  # ── Optional: local PostgreSQL (uncomment to use) ─────────────────────────
+  # postgres:
+  #   image: postgres:16
+  #   container_name: gsm-postgres
+  #   environment:
+  #     POSTGRES_DB: gameservers
+  #     POSTGRES_USER: gsm
+  #     POSTGRES_PASSWORD: changeme
+  #   volumes:
+  #     - gsm_postgres:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+volumes:
+  gsm_data:
+  gsm_steamcmd:
+  gsm_servers:
+  # gsm_mysql:
+  # gsm_postgres:

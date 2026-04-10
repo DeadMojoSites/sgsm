@@ -1,0 +1,9 @@
+node_modules
+*/node_modules
+frontend/dist
+backend/public
+*.log
+.git
+.gitignore
+.DS_Store
+*.md
