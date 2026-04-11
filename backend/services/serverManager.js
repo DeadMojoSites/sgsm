@@ -1,7 +1,9 @@
 'use strict';
 
-const { spawn } = require('child_process');
-const db        = require('./database');
+const { spawn }  = require('child_process');
+const path       = require('path');
+const fs         = require('fs');
+const db         = require('./database');
 
 const running = new Map(); // serverId → child process
 let io;
@@ -25,7 +27,27 @@ function startServer(serverId) {
   const server = db.getServer(serverId);
   if (!server)                   throw new Error('Server not found');
   if (running.has(serverId))     throw new Error('Server is already running');
-  if (!server.launch_executable) throw new Error('No launch executable configured for this server');
+  if (!server.launch_executable) throw new Error('No launch executable configured. Edit the server and set a Launch Executable.');
+
+  // Pre-flight: install directory must exist
+  if (!fs.existsSync(server.install_dir)) {
+    throw new Error(
+      `Install directory not found: "${server.install_dir}". ` +
+      `Use the Install button to download the server files first.`
+    );
+  }
+
+  // Pre-flight: resolve and verify executable exists
+  const execPath = path.isAbsolute(server.launch_executable)
+    ? server.launch_executable
+    : path.join(server.install_dir, server.launch_executable.replace(/^\.\//, ''));
+
+  if (!fs.existsSync(execPath)) {
+    throw new Error(
+      `Executable not found: "${server.launch_executable}". ` +
+      `Check the Launch Executable path in the server settings.`
+    );
+  }
 
   const args = server.launch_args
     ? server.launch_args.trim().split(/\s+/)

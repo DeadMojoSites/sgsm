@@ -25,7 +25,17 @@ const TEMPLATES = [
   { name: 'DayZ',                   app_id: '223350', launch_executable: './DayZServer',                     launch_args: '-config=serverDZ.cfg -port=2302 -BEpath=battleye',                port: 2302,  max_players: 60 },
   { name: 'Satisfactory',           app_id: '1690800',launch_executable: './FactoryServer.sh',               launch_args: '-multihome=0.0.0.0',                                              port: 7777,  max_players: 4  },
   { name: 'Palworld',               app_id: '2394010',launch_executable: './PalServer.sh',                   launch_args: 'EpicApp=PalServer',                                               port: 8211,  max_players: 32 },
-  { name: 'Enshrouded',             app_id: '2278520',launch_executable: './enshrouded_server',              launch_args: '',                                                                port: 15636, max_players: 16 },
+  { name: 'Enshrouded',             app_id: '2278520', launch_executable: './enshrouded_server',              launch_args: '',                                                                              port: 15636, max_players: 16 },
+  { name: 'Arma Reforger',         app_id: '1874900', launch_executable: './ArmaReforgerServer',               launch_args: '-config /path/to/config.json -profile /path/to/profile',                        port: 2001,  max_players: 32 },
+  { name: 'Minecraft (Bedrock)',   app_id: '1944420', launch_executable: './bedrock_server',                   launch_args: '',                                                                              port: 19132, max_players: 20 },
+  { name: 'Space Engineers',       app_id: '298740',  launch_executable: './SpaceEngineersDedicated.exe',      launch_args: '-console -noconsole',                                                           port: 27016, max_players: 16 },
+  { name: 'Squad',                 app_id: '403240',  launch_executable: './SquadGameServer.sh',               launch_args: 'SquadGame -log -Port=7787 -QueryPort=27165',                                    port: 7787,  max_players: 100},
+  { name: 'Conan Exiles',          app_id: '443030',  launch_executable: './ConanSandboxServer.sh',            launch_args: '-MaxPlayers=40 -Port=7777 -QueryPort=27015',                                    port: 7777,  max_players: 40 },
+  { name: 'The Forest',            app_id: '556450',  launch_executable: './TheForestDedicatedServer',         launch_args: '-serverip 0.0.0.0 -serverport 27015 -serverplayers 8 -servername "The Forest"', port: 27015, max_players: 8  },
+  { name: 'Sons of the Forest',    app_id: '1326470', launch_executable: './SonsOfTheForestDS',                launch_args: '',                                                                              port: 8766,  max_players: 8  },
+  { name: 'Killing Floor 2',       app_id: '232130',  launch_executable: './KFGameSteamServer.sh',             launch_args: 'KF-BioticsLab?Difficulty=0?GameLength=1 -Port=7777',                            port: 7777,  max_players: 6  },
+  { name: 'Ark: Survival Ascended',app_id: '2430930', launch_executable: './ArkAscendedServer.sh',             launch_args: 'TheIsland_WP?SessionName=ASA?Port=7777?QueryPort=27015 -server -log',            port: 7777,  max_players: 70 },
+  { name: 'V Rising',              app_id: '1829350', launch_executable: './VRisingServer',                    launch_args: '-persistentDataPath ./save-data',                                               port: 9876,  max_players: 40 },
 ];
 
 // ─── GET /api/servers/templates ───────────────────────────────────────────────

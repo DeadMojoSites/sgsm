@@ -1,8 +1,6 @@
-version: "3.8"
-
 services:
   game-server-manager:
-    build: .
+    image: ghcr.io/mbrown22073/sgsm:latest
     container_name: game-server-manager
     ports:
       - "8080:8080"
