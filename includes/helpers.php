@@ -100,7 +100,15 @@ function startServer(array $server): int {
     $execPath = str_starts_with($executable, '/') ? $executable
         : rtrim($installDir, '/') . '/' . ltrim(preg_replace('#^\./#', '', $executable), '/');
 
-    if (!file_exists($execPath)) throw new RuntimeException("Executable not found: \"$executable\".");
+    if (!file_exists($execPath)) {
+        throw new RuntimeException(
+            "Executable not found: \"$executable\". " .
+            "The server files may not be installed yet — use the Install button to download them via SteamCMD first."
+        );
+    }
+    if (!is_executable($execPath)) {
+        chmod($execPath, 0755);
+    }
 
     $logFile = DATA_DIR . '/logs/server-' . $id . '.log';
     if (!is_dir(dirname($logFile))) mkdir(dirname($logFile), 0755, true);
