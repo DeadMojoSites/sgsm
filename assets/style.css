@@ -129,11 +129,6 @@ textarea.form-control { resize:vertical; min-height:70px; }
 .modal-body { padding:20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px; }
 .modal-footer { padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; flex-shrink:0; background:rgba(0,0,0,.1); border-radius:0 0 var(--radius-lg) var(--radius-lg); }
 
-/* ── Templates grid ──────────────────────────────────────────────────────────── */
-.templates-grid { display:flex; flex-wrap:wrap; gap:5px; }
-.tpl-btn { background:rgba(255,255,255,.06); border:1px solid var(--border); color:var(--text); border-radius:var(--radius); padding:4px 10px; font-size:.75rem; cursor:pointer; transition:background .15s; }
-.tpl-btn:hover { background:rgba(26,159,255,.15); color:var(--blue); border-color:var(--blue); }
-
 /* ── Console ─────────────────────────────────────────────────────────────────── */
 .console-wrapper { background:#0a0e14; border:1px solid #2a3a4a; border-radius:var(--radius); padding:14px; font-family:'Consolas','Courier New',monospace; font-size:.8rem; line-height:1.55; overflow-y:auto; min-height:280px; max-height:460px; white-space:pre-wrap; word-break:break-word; color:#9fbe9f; }
 
@@ -157,3 +152,61 @@ textarea.form-control { resize:vertical; min-height:70px; }
   .main-content { padding:16px; }
   :root { --sidebar-w:180px; }
 }
+
+/* ── New Feature Styles ───────────────────────────────────────────────────── */
+
+/* Dashboard two-column grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
+@media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
+
+/* Data tables (users, mojos, webhooks) */
+.data-table { border-collapse: collapse; width: 100%; }
+.data-table th, .data-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.875rem; text-align: left; }
+.data-table th { color: var(--text-muted); font-weight: 600; background: none; }
+.empty-row { text-align: center; color: var(--text-muted); padding: 1.5rem !important; }
+
+/* Tab bar (for detail modal) */
+.tab-bar { display: flex; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+.tab-item { background: none; border: none; padding: 0.75rem 1.25rem; color: var(--text-muted); cursor: pointer; font-size: 0.875rem; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s; }
+.tab-item:hover { color: var(--text); }
+.tab-item.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+/* Console stdin bar */
+.console-stdin-bar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.console-stdin-input { flex: 1; font-family: monospace; font-size: 0.875rem; }
+
+/* Breadcrumb */
+.file-breadcrumb { font-size: 0.85rem; color: var(--text-muted); padding: 0 0 0.75rem; }
+.file-breadcrumb .crumb-item { color: var(--blue); }
+.file-breadcrumb .crumb-item:hover { text-decoration: underline; }
+
+/* Badge variants */
+.badge-blue   { background: rgba(26,159,255,.15); color: var(--blue); }
+.badge-neutral { background: var(--bg-hover, rgba(255,255,255,.05)); color: var(--text-muted); }
+
+/* Mojo variable rows in server form */
+.mojo-var-row { align-items: flex-start; }
+
+/* Checkbox label */
+.checkbox-label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-size: 0.875rem; }
+
+/* Perm checkboxes grid */
+.perm-cb { margin-right: 0.25rem; }
+
+/* Page subtitle */
+.page-subtitle { color: var(--text-muted); font-size: 0.875rem; margin: 0; }
+
+/* Card header with action button */
+.card-header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+.card-title  { font-weight: 600; font-size: 0.9rem; margin: 0; }

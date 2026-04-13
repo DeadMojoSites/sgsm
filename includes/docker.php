@@ -230,4 +230,32 @@ class DockerClient {
         $r = $this->req('GET', "/volumes/$name");
         return $r['code'] === 200;
     }
+
+    // ── Exec (stdin) ──────────────────────────────────────────────────────────
+
+    /**
+     * Send a text command to a container's main-process stdin by writing to
+     * /proc/1/fd/0 via docker exec. Works for most dedicated game servers.
+     * Returns false if the exec failed (container has no /bin/sh, etc.).
+     */
+    public function sendStdin(string $containerId, string $command): bool {
+        try {
+            // Create exec instance — run sh -c "printf ... > /proc/1/fd/0"
+            $safeCmd = 'printf "%s\n" ' . escapeshellarg($command) . ' > /proc/1/fd/0';
+            $r = $this->req('POST', "/containers/$containerId/exec", [
+                'AttachStdin'  => false,
+                'AttachStdout' => false,
+                'AttachStderr' => false,
+                'Tty'          => false,
+                'Cmd'          => ['/bin/sh', '-c', $safeCmd],
+            ]);
+            if ($r['code'] !== 201 || empty($r['body']['Id'])) return false;
+            $execId = $r['body']['Id'];
+            // Start exec — detached (fire-and-forget)
+            $this->req('POST', "/exec/$execId/start", ['Detach' => true, 'Tty' => false]);
+            return true;
+        } catch (RuntimeException) {
+            return false;
+        }
+    }
 }

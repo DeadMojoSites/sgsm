@@ -5,6 +5,89 @@ require_once __DIR__ . '/../includes/helpers.php';
 session_start();
 requireAuth();
 
+// ── POST: send command to server stdin ────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $b   = getBody();
+    $id  = (int)($b['id'] ?? 0);
+    $cmd = trim($b['command'] ?? '');
+    if (!$id)  jsonError('id is required');
+    if ($cmd === '') jsonError('command is required');
+    if (!isAdmin() && !hasServerPermission($id, 'can_console')) jsonError('Forbidden', 403);
+    $db  = new GSM_DB();
+    $s   = $db->getServer($id);
+    if (!$s) jsonError('Server not found', 404);
+    $cid = $s['container_id'] ?? '';
+    if (!$cid || !isContainerRunning($cid)) jsonError('Server is not running', 400);
+    $ok  = docker()->sendStdin($cid, $cmd);
+    logActivity('console.command', "Sent: $cmd", $id);
+    jsonResponse(['ok' => $ok, 'note' => $ok ? '' : 'Command sent but container may not have /bin/sh']);
+}
+
+// Polling-based log reader — returns JSON instantly, no long-running connection.
+// Client calls repeatedly with ?offset=N to get new lines since last read.
+//
+// For Docker containers, offset 0 = "last 200 lines", offset > 0 = Unix timestamp
+// treated as a "since" cursor so only new lines are returned. The returned offset
+// is always the current Unix timestamp when reading from Docker.
+
+$id     = (int)($_GET['id'] ?? 0);
+$type   = preg_replace('/[^a-z]/', '', $_GET['type'] ?? 'server');
+$offset = max(0, (int)($_GET['offset'] ?? 0));
+
+$lines     = [];
+$newOffset = $offset;
+
+// ── Docker-based log reading ─────────────────────────────────────────────────
+if ($id > 0 && in_array($type, ['server', 'install'])) {
+    $db = new GSM_DB();
+    $s  = $db->getServer($id);
+    if (!isAdmin() && !hasServerPermission($id, 'can_console')) jsonError('Forbidden', 403);
+    $containerId = $s['container_id'] ?? '';
+
+    if ($containerId) {
+        try {
+            $since = ($offset > 10000) ? $offset : null;
+            $raw   = docker()->getLogs($containerId, 200, $since);
+            $newOffset = time();
+            foreach (explode("\n", $raw) as $line) {
+                if ($line !== '') $lines[] = $line;
+            }
+            jsonResponse(['lines' => $lines, 'offset' => $newOffset]);
+        } catch (RuntimeException) {
+            // Container gone — fall through to file-based fallback
+        }
+    }
+}
+
+// ── File-based log reading (fallback / update log) ───────────────────────────
+if ($type === 'update') {
+    $logFile = DATA_DIR . '/logs/update.log';
+} elseif ($id > 0 && in_array($type, ['server', 'install'])) {
+    $logFile = DATA_DIR . '/logs/' . $type . '-' . $id . '.log';
+} else {
+    jsonError('Invalid parameters', 400);
+}
+
+clearstatcache(true, $logFile);
+if (file_exists($logFile)) {
+    $size = filesize($logFile);
+    if ($size > $offset) {
+        $fh = fopen($logFile, 'rb');
+        fseek($fh, $offset);
+        $data = fread($fh, $size - $offset);
+        fclose($fh);
+        $newOffset = $size;
+        foreach (explode("\n", $data) as $line) {
+            if ($line !== '') $lines[] = $line;
+        }
+    }
+} elseif ($offset === 0) {
+    $lines[] = 'Waiting for container to start...';
+}
+
+jsonResponse(['lines' => $lines, 'offset' => $newOffset]);
+
+
 // Polling-based log reader — returns JSON instantly, no long-running connection.
 // Client calls repeatedly with ?offset=N to get new lines since last read.
 //

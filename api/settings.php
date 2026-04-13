@@ -11,16 +11,23 @@ $action = $_GET['action'] ?? '';
 
 // ── GET all settings ─────────────────────────────────────────────────────────
 if ($method === 'GET' && $action === '') {
+    requireAdmin();
     $s = $db->getSettings();
     unset($s['admin_password_hash']); // never expose
+    // Mask steam_password — don't send the actual (encrypted) value to the client
+    if (!empty($s['steam_password'])) {
+        $s['steam_password'] = '••••••••';
+    }
     jsonResponse($s);
 }
 
 // ── POST save settings ───────────────────────────────────────────────────────
 if ($method === 'POST' && $action === '') {
+    requireAdmin();
     $b       = getBody();
     $allowed = [
         'app_name', 'steamcmd_path', 'servers_path', 'steam_api_key',
+        'steam_username',
         'db_type', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
         'update_repo_url',
         'custom_api_key_1_name', 'custom_api_key_1_value',
@@ -31,6 +38,11 @@ if ($method === 'POST' && $action === '') {
             $db->setSetting($key, (string)$b[$key]);
         }
     }
+    // steam_password is stored encrypted; only update if a non-placeholder value was sent
+    if (!empty($b['steam_password']) && $b['steam_password'] !== '••••••••') {
+        $db->setSetting('steam_password', encryptValue((string)$b['steam_password']));
+    }
+    logActivity('settings.updated', 'Updated application settings', null);
     jsonResponse(['ok' => true]);
 }
 

@@ -1,10 +1,15 @@
-<?php $servers = $db->getServers(); ?>
+﻿<?php
+$servers = $db->getServers();
+$isAdmin = isAdmin();
+?>
 <div class="page-header">
   <h2 class="page-title">Game Servers</h2>
+  <?php if ($isAdmin): ?>
   <button class="btn btn-primary" onclick="openServerModal()">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     Add Server
   </button>
+  <?php endif; ?>
 </div>
 
 <div id="server-list">
@@ -31,24 +36,18 @@
             <button class="btn btn-warning btn-sm" onclick="serverAction(<?= $id ?>,'cancel-install')" title="Cancel">✕</button>
           <?php endif; ?>
           <?php
-            // Show install log if currently installing, or if server has never been started (no server log yet)
             $serverLog  = DATA_DIR . '/logs/server-'  . $id . '.log';
             $installLog = DATA_DIR . '/logs/install-' . $id . '.log';
             $consoleType = ($s['status'] === 'installing' || (!file_exists($serverLog) && file_exists($installLog))) ? 'install' : 'server';
           ?>
           <button class="btn btn-ghost btn-sm" onclick="openConsole(<?= $id ?>, '<?= $consoleType ?>')" title="Console">⌨</button>
+          <?php if ($isAdmin): ?>
           <button class="btn btn-ghost btn-sm" onclick="serverAction(<?= $id ?>,'install')" title="Install/Update">⬇</button>
           <button class="btn btn-ghost btn-sm" onclick="openModsModal(<?= $id ?>, <?= htmlspecialchars(json_encode($s['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($s['app_id']), ENT_QUOTES) ?>)" title="Workshop Mods">🧩</button>
-          <?php
-            // Resolve config file path if the server uses -config <path>
-            $resolvedArgs = str_replace('{INSTALL_DIR}', rtrim($s['install_dir'], '/'), $s['launch_args'] ?? '');
-            preg_match('/-config\s+(\S+)/', $resolvedArgs, $cfgArgMatch);
-          ?>
-          <?php if (!empty($cfgArgMatch[1])): ?>
-          <button class="btn btn-ghost btn-sm" onclick="openConfigEditor(<?= htmlspecialchars(json_encode($cfgArgMatch[1]), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($s['name']), ENT_QUOTES) ?>)" title="Edit Config File">📄</button>
-          <?php endif; ?>
+          <button class="btn btn-ghost btn-sm" onclick="openServerDetail(<?= $id ?>)" title="Manage">⚙</button>
           <button class="btn btn-ghost btn-sm" onclick="openServerModal(<?= htmlspecialchars(json_encode($s), ENT_QUOTES) ?>)" title="Edit">✎</button>
           <button class="btn btn-danger btn-sm"  onclick="deleteServer(<?= $id ?>, '<?= htmlspecialchars($s['name'], ENT_QUOTES) ?>')" title="Delete">🗑</button>
+          <?php endif; ?>
         </td>
       </tr>
     <?php endforeach; ?>
@@ -63,6 +62,107 @@
 <?php endif; ?>
 </div>
 
+<!-- Console Modal -->
+<div class="modal-overlay" id="console-modal" style="display:none" onclick="if(event.target===this)closeConsole()">
+  <div class="modal modal-xl">
+    <div class="modal-header">
+      <span class="modal-title" id="console-title">Server Console</span>
+      <button class="btn btn-ghost btn-icon" onclick="closeConsole()">✕</button>
+    </div>
+    <div class="modal-body" style="padding-bottom:0">
+      <div class="console-wrapper" id="console-output">Connecting…</div>
+    </div>
+    <div class="console-stdin-bar" id="console-stdin-bar" style="display:none">
+      <input type="text" class="form-input console-stdin-input" id="console-stdin-input"
+             placeholder="Type a command and press Enter…"
+             onkeydown="if(event.key==='Enter')sendConsoleCommand()">
+      <button class="btn btn-primary btn-sm" onclick="sendConsoleCommand()">Send</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeConsole()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Server Detail Modal (Variables, Backups, Schedules) -->
+<div class="modal-overlay" id="detail-modal" style="display:none" onclick="if(event.target===this)closeModal('detail-modal')">
+  <div class="modal modal-xl">
+    <div class="modal-header">
+      <span class="modal-title" id="detail-modal-title">Server Management</span>
+      <button class="btn btn-ghost btn-icon" onclick="closeModal('detail-modal')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <div class="tab-bar">
+        <button class="tab-item active" id="dtab-variables"  onclick="showDetailTab('variables')">Variables</button>
+        <button class="tab-item"        id="dtab-backups"    onclick="showDetailTab('backups')">Backups</button>
+        <button class="tab-item"        id="dtab-schedules"  onclick="showDetailTab('schedules')">Schedules</button>
+        <button class="tab-item"        id="dtab-files"      onclick="showDetailTab('files')">Files</button>
+      </div>
+      <div style="padding:1.25rem">
+        <!-- Variables Tab -->
+        <div id="detail-tab-variables">
+          <p class="text-muted" style="margin-bottom:0.75rem">These values replace <code>{PLACEHOLDER}</code> tokens in the startup command.</p>
+          <div id="vars-list"></div>
+          <button class="btn btn-primary" style="margin-top:1rem" onclick="saveVariables()">Save Variables</button>
+        </div>
+
+        <!-- Backups Tab -->
+        <div id="detail-tab-backups" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+            <span class="text-muted">Snapshots of the server directory stored as <code>.tar.gz</code></span>
+            <button class="btn btn-primary btn-sm" onclick="createBackup()">Create Backup</button>
+          </div>
+          <div id="backups-list"></div>
+        </div>
+
+        <!-- Schedules Tab -->
+        <div id="detail-tab-schedules" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+            <span class="text-muted">Scheduled start/stop/restart using cron expressions</span>
+            <button class="btn btn-primary btn-sm" onclick="openScheduleForm()">Add Schedule</button>
+          </div>
+          <div id="schedules-list"></div>
+          <div id="schedule-form" style="display:none;margin-top:1rem;padding:1rem;background:var(--bg-section,rgba(0,0,0,.2));border-radius:var(--radius)">
+            <input type="hidden" id="sched-id">
+            <div class="form-row">
+              <div class="form-group" style="flex:2">
+                <label class="form-label">Cron Expression <span class="text-muted">(min hour dom mon dow)</span></label>
+                <input type="text" class="form-input" id="sched-cron" placeholder="0 6 * * *">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Action</label>
+                <select class="form-input" id="sched-action">
+                  <option value="start">Start</option>
+                  <option value="stop">Stop</option>
+                  <option value="restart">Restart</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex:0;align-self:flex-end">
+                <label class="checkbox-label" style="padding-bottom:0.75rem">
+                  <input type="checkbox" id="sched-active" checked> Active
+                </label>
+              </div>
+            </div>
+            <div style="display:flex;gap:0.5rem">
+              <button class="btn btn-primary btn-sm" onclick="saveSchedule()">Save</button>
+              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('schedule-form').style.display='none'">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Files Tab -->
+        <div id="detail-tab-files" style="display:none">
+          <div id="file-breadcrumb" class="file-breadcrumb"></div>
+          <div id="file-list-area"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add/Edit Server Modal -->
 <div class="modal-overlay" id="server-modal" style="display:none" onclick="if(event.target===this)closeModal('server-modal')">
   <div class="modal modal-lg">
@@ -75,10 +175,17 @@
         <input type="hidden" id="sf-id">
         <div id="sf-error" class="alert alert-error" style="display:none"></div>
 
-        <div class="settings-section-title">Quick Start Templates</div>
-        <div id="templates-list" class="templates-grid">Loading…</div>
-        <p class="form-hint">Click a template to pre-fill, then edit below.</p>
-        <div class="divider"></div>
+        <div id="sf-mojo-section">
+          <div class="settings-section-title">Choose a Mojo (Game Template)</div>
+          <select class="form-input" id="sf-mojo-id" onchange="onMojoSelect()" style="margin-bottom:0.5rem">
+            <option value="">— Select a Mojo —</option>
+          </select>
+          <div id="sf-mojo-vars" style="display:none">
+            <div class="settings-section-title" style="margin-top:1rem">Startup Variables</div>
+            <div id="sf-mojo-vars-list"></div>
+          </div>
+          <div class="divider"></div>
+        </div>
 
         <div class="settings-section-title">Server Details</div>
         <div class="form-row">
@@ -94,15 +201,12 @@
         <div class="form-group">
           <label class="form-label">Install Directory <span class="required">*</span></label>
           <input class="form-control" type="text" id="sf-dir" required placeholder="/opt/servers/my-server">
-          <span class="form-hint">Absolute path inside the container.</span>
         </div>
-
         <div class="divider"></div>
         <div class="settings-section-title">Launch Configuration</div>
         <div class="form-group">
           <label class="form-label">Launch Executable</label>
           <input class="form-control" type="text" id="sf-exec" placeholder="./server.x86_64">
-          <span class="form-hint">Relative to install directory. Required for Start/Stop controls.</span>
         </div>
         <div class="form-group">
           <label class="form-label">Launch Arguments</label>
@@ -110,7 +214,7 @@
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Game Port</label>
+            <label class="form-label">Port</label>
             <input class="form-control" type="number" id="sf-port" placeholder="27015" min="1" max="65535">
           </div>
           <div class="form-group">
@@ -170,14 +274,11 @@
       <button class="btn btn-ghost btn-icon" onclick="closeModsModal()">✕</button>
     </div>
     <div class="modal-body" style="gap:0">
-
-      <!-- Add mod panel -->
       <div class="settings-section-title" style="margin-bottom:10px">Add Mod</div>
-      <div id="mods-source-tabs" class="" style="display:flex;gap:6px;margin-bottom:12px">
-        <button class="btn btn-sm btn-primary"  id="mods-tab-steam"  onclick="setModSource('steam')">Steam Workshop</button>
+      <div id="mods-source-tabs" style="display:flex;gap:6px;margin-bottom:12px">
+        <button class="btn btn-sm btn-primary"  id="mods-tab-steam"   onclick="setModSource('steam')">Steam Workshop</button>
         <button class="btn btn-sm btn-ghost"    id="mods-tab-bohemia" onclick="setModSource('bohemia')">Bohemia Workshop</button>
       </div>
-
       <div id="mods-add-section" style="background:var(--bg-section,rgba(0,0,0,.2));border-radius:var(--radius);padding:14px;margin-bottom:18px">
         <div class="form-row" style="align-items:flex-end">
           <div class="form-group" style="flex:1">
@@ -202,18 +303,37 @@
           <input class="form-control" type="text" id="mods-manual-name-input" placeholder="e.g. ACE3">
         </div>
         <div id="mods-add-error" class="alert alert-error" style="display:none;margin-top:8px"></div>
-        <div style="margin-top:10px;display:flex;gap:8px">
+        <div style="margin-top:10px">
           <button class="btn btn-primary" id="mods-add-btn" onclick="addMod()" style="display:none">Add to Server</button>
         </div>
       </div>
-
-      <!-- Installed mod list -->
       <div class="settings-section-title" style="margin-bottom:10px">Installed Mods <span id="mods-count" style="font-size:.8rem;font-weight:400;color:var(--text-muted)"></span></div>
       <div id="mods-list">Loading…</div>
     </div>
     <div class="modal-footer">
       <span id="mods-footer-hint" style="flex:1;font-size:.8rem;color:var(--text-muted)"></span>
       <button class="btn btn-ghost" onclick="closeModsModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Post-Create Setup Modal -->
+<div class="modal-overlay" id="setup-modal" style="display:none" onclick="if(event.target===this)closeSetupModal()">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title">Server Created — Quick Setup</span>
+      <button class="btn btn-ghost btn-icon" onclick="closeSetupModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-success" style="margin-bottom:1rem">
+        ✓ Server added! Review any passwords or settings below before installing.
+      </div>
+      <input type="hidden" id="setup-server-id">
+      <div id="setup-fields"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeSetupModal()">Skip</button>
+      <button class="btn btn-primary" id="setup-save" onclick="saveSetupConfig()">Save &amp; Continue</button>
     </div>
   </div>
 </div>
@@ -230,43 +350,6 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModConsole()">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- Post-Create Setup Modal -->
-<div class="modal-overlay" id="setup-modal" style="display:none" onclick="if(event.target===this)closeSetupModal()">
-  <div class="modal modal-lg">
-    <div class="modal-header">
-      <span class="modal-title">Server Created — Quick Setup</span>
-      <button class="btn btn-ghost btn-icon" onclick="closeSetupModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="alert alert-success" style="margin-bottom:1rem">
-        ✓ Server added! Review and update any passwords or settings below before installing.
-      </div>
-      <input type="hidden" id="setup-server-id">
-      <div id="setup-fields"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeSetupModal()">Skip</button>
-      <button class="btn btn-primary" id="setup-save" onclick="saveSetupConfig()">Save &amp; Continue</button>
-    </div>
-  </div>
-</div>
-
-<!-- Console Modal -->
-<div class="modal-overlay" id="console-modal" style="display:none" onclick="if(event.target===this)closeConsole()">
-  <div class="modal modal-xl">
-    <div class="modal-header">
-      <span class="modal-title" id="console-title">Server Console</span>
-      <button class="btn btn-ghost btn-icon" onclick="closeConsole()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="console-wrapper" id="console-output">Connecting…</div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeConsole()">Close</button>
     </div>
   </div>
 </div>

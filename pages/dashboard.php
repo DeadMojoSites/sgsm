@@ -9,6 +9,7 @@ foreach ($servers as $s) {
         default      => $stopped++,
     };
 }
+$recentActivity = $db->getActivityLog(10);
 ?>
 <div class="page-header">
   <h2 class="page-title">Dashboard</h2>
@@ -41,11 +42,13 @@ foreach ($servers as $s) {
   </div>
 </div>
 
+<div class="dashboard-grid">
+
 <?php if ($servers): ?>
-<div class="card mt-4">
+<div class="card">
   <div class="card-header"><h3 class="card-title">Servers</h3></div>
   <table class="table">
-    <thead><tr><th>Name</th><th>App ID</th><th>Status</th><th>Port</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th>App ID</th><th>Status</th><th>Port</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($servers as $s): ?>
       <tr>
@@ -67,3 +70,29 @@ foreach ($servers as $s) {
   <p>No servers yet. <a href="<?= BASE ?>/?p=servers">Add your first server →</a></p>
 </div>
 <?php endif; ?>
+
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">Recent Activity</h3>
+    <a href="<?= BASE ?>/?p=activity" class="btn btn-ghost btn-sm">View all</a>
+  </div>
+  <?php if ($recentActivity): ?>
+  <table class="table">
+    <tbody>
+    <?php foreach ($recentActivity as $a): ?>
+      <tr>
+        <td style="white-space:nowrap;color:var(--text-muted);font-size:0.8rem"><?= date('M j H:i', strtotime($a['created_at'])) ?></td>
+        <td><span class="badge badge-neutral"><?= htmlspecialchars($a['action']) ?></span></td>
+        <td><?= htmlspecialchars($a['description'] ?? '') ?></td>
+        <td style="color:var(--text-muted);font-size:0.8rem"><?= htmlspecialchars($a['username'] ?? 'system') ?></td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  <?php else: ?>
+  <p class="text-muted" style="padding:1rem">No activity yet.</p>
+  <?php endif; ?>
+</div>
+
+</div><!-- .dashboard-grid -->
+

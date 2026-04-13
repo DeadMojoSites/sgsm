@@ -12,6 +12,7 @@ services:
       - DATA_DIR=/app/data
       - DOCKER_SOCKET=/var/run/docker.sock
       - GSM_SERVERS_HOST_PATH=${PWD}/gsm_servers   # Absolute host path passed to game containers
+      - APP_KEY=${APP_KEY:-changeme-please-set-a-32-char-secret}  # Used to encrypt steam passwords
     restart: unless-stopped
 
   # ── Optional: local MySQL (uncomment to use) ──────────────────────────────

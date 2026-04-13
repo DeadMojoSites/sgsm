@@ -189,48 +189,6 @@ async function runUpdate() {
   } catch (e) { el.textContent += 'Error: ' + e.message; }
 }
 
-// ── Templates ─────────────────────────────────────────────────────────────────
-async function loadTemplates() {
-  const container = document.getElementById('templates-list');
-  if (!container) return;
-  try {
-    const templates = await api('/api/servers.php?templates=1');
-    container.innerHTML = templates.map(t =>
-      `<button type="button" class="tpl-btn" onclick='applyTemplate(${JSON.stringify(t)})'>${t.name}</button>`
-    ).join('');
-  } catch { container.textContent = 'Could not load templates'; }
-}
-
-function applyTemplate(t) {
-  const serversPath = document.getElementById('cfg-servers_path')?.value || '/opt/servers';
-  const installDir  = serversPath + '/' + t.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-  // Replace {INSTALL_DIR} placeholder in launch args with the actual install directory
-  const launchArgs  = (t.launch_args || '').replace(/\{INSTALL_DIR\}/g, installDir);
-  setValue('sf-name',  t.name);
-  setValue('sf-appid', t.app_id);
-  setValue('sf-dir',   installDir);
-  setValue('sf-exec',  t.launch_executable);
-  setValue('sf-args',  launchArgs);
-  setValue('sf-port',  t.port  || '');
-  setValue('sf-maxp',  t.max_players || '');
-  setValue('sf-cpu',   '');
-  setValue('sf-ram',   '');
-
-  // Show warning if this game requires a Steam account login
-  let warn = document.getElementById('tpl-login-warning');
-  if (!warn) {
-    warn = document.createElement('div');
-    warn.id = 'tpl-login-warning';
-    warn.className = 'alert alert-warning';
-    warn.style.cssText = 'margin-top:10px;display:none';
-    warn.innerHTML = '⚠️ This game requires a Steam account login to install. '
-      + 'Add your credentials in <strong>Settings → Steam</strong> before clicking Install, '
-      + 'otherwise the download will fail.';
-    document.getElementById('templates-list')?.parentElement?.appendChild(warn);
-  }
-  warn.style.display = t.requires_login ? 'flex' : 'none';
-}
-
 function setValue(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
 
 // ── Post-create setup modal ───────────────────────────────────────────────────
@@ -366,14 +324,9 @@ function openServerModal(server) {
   setValue('sf-cpu',   server?.cpu_limit   || '');
   setValue('sf-ram',   server?.ram_limit_mb || '');
   setValue('sf-notes', server?.notes || '');
-  if (!isEdit) {
-    const tl = document.getElementById('templates-list');
-    if (tl) tl.closest('div').style.display = ''; // ensure wrapper is visible
-    loadTemplates();
-  } else {
-    const tl = document.getElementById('templates-list');
-    if (tl) tl.closest('div').style.display = 'none'; // hide templates on edit
-  }
+  const mojoSection = document.getElementById('sf-mojo-section');
+  if (mojoSection) mojoSection.style.display = isEdit ? 'none' : '';
+  if (!isEdit) loadMojosForSelect(server?.mojo_id);
   openModal('server-modal');
 }
 
@@ -397,7 +350,13 @@ async function submitServerForm(e) {
     cpu_limit:         parseFloat(document.getElementById('sf-cpu').value) || 0,
     ram_limit_mb:      parseInt(document.getElementById('sf-ram').value)   || 0,
     notes:             document.getElementById('sf-notes').value.trim(),
+    mojo_id:           document.getElementById('sf-mojo-id')?.value || null,
   };
+  // Collect mojo variable values
+  const varEls = document.querySelectorAll('#sf-mojo-vars-list .mojo-var-input');
+  const mojoVars = {};
+  varEls.forEach(el => { mojoVars[el.dataset.key] = el.value; });
+  if (Object.keys(mojoVars).length) body._mojo_vars = mojoVars;
   try {
     const url    = isEdit ? `${BASE}/api/servers.php?id=${id}` : `${BASE}/api/servers.php`;
     const method = isEdit ? 'PUT' : 'POST';
@@ -445,11 +404,28 @@ async function deleteServer(id, name) {
 }
 
 // ── Console modal ─────────────────────────────────────────────────────────────
+let _consoleServerId = null;
+
 function openConsole(id, type) {
+  _consoleServerId = id;
   document.getElementById('console-title').textContent = type === 'install' ? 'Install Console' : 'Server Console';
   document.getElementById('console-output').textContent = '';
+  const stdinBar = document.getElementById('console-stdin-bar');
+  if (stdinBar) stdinBar.style.display = (type === 'server') ? 'flex' : 'none';
+  const stdinInput = document.getElementById('console-stdin-input');
+  if (stdinInput) stdinInput.value = '';
   openModal('console-modal');
   startConsolePolling(id, type, document.getElementById('console-output'));
+}
+
+async function sendConsoleCommand() {
+  const input = document.getElementById('console-stdin-input');
+  const cmd = input?.value.trim();
+  if (!cmd || !_consoleServerId) return;
+  input.value = '';
+  try {
+    await api('/api/console.php', { method: 'POST', body: JSON.stringify({ id: _consoleServerId, command: cmd }) });
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 function startConsolePolling(id, type, outputEl) {
@@ -780,3 +756,683 @@ function closeModsModal() {
   _lookedUpMod  = null;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NEW FEATURES – Mojos, Users, Activity, Backups, Schedules, Webhooks, Files
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Mojo selector in server create modal ────────────────────────────────────
+let _allMojos = [];
+
+async function loadMojosForSelect(selectedId) {
+  const sel = document.getElementById('sf-mojo-id');
+  if (!sel) return;
+  if (!_allMojos.length) {
+    try { _allMojos = await api('/api/servers.php?mojos=1'); } catch { _allMojos = []; }
+  }
+  sel.innerHTML = '<option value="">— Select a Mojo —</option>' +
+    _allMojos.map(m => `<option value="${m.id}"${m.id == selectedId ? ' selected' : ''}>${escHtml(m.name)}</option>`).join('');
+  if (selectedId) onMojoSelect();
+}
+
+function onMojoSelect() {
+  const sel   = document.getElementById('sf-mojo-id');
+  const mojo  = _allMojos.find(m => m.id == sel?.value);
+  const varsDiv  = document.getElementById('sf-mojo-vars');
+  const varsList = document.getElementById('sf-mojo-vars-list');
+  if (!mojo || !varsList) { if (varsDiv) varsDiv.style.display = 'none'; return; }
+
+  // Pre-fill server fields from mojo
+  const serversPath = document.getElementById('cfg-servers_path')?.value || '/opt/servers';
+  const slug = mojo.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  setValue('sf-appid', mojo.app_id || '');
+  setValue('sf-exec',  mojo.launch_executable || '');
+  setValue('sf-port',  mojo.port || '');
+  setValue('sf-maxp',  mojo.max_players || '');
+  if (!document.getElementById('sf-dir').value)
+    setValue('sf-dir', serversPath + '/' + slug);
+
+  // Render variable inputs
+  const vars = mojo.variables || [];
+  varsList.innerHTML = vars.map(v => `
+    <div class="form-row" style="margin-bottom:0.5rem">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">${escHtml(v.name)} <code style="font-size:0.75rem">{${escHtml(v.env_variable)}}</code></label>
+        <input type="text" class="form-input mojo-var-input" data-key="${escHtml(v.env_variable)}"
+               value="${escHtml(v.default_value)}" placeholder="${escHtml(v.default_value)}">
+      </div>
+    </div>`).join('');
+  varsDiv.style.display = vars.length ? '' : 'none';
+}
+
+// ── Server Detail Modal (Variables / Backups / Schedules / Files) ────────────
+let _detailServerId = null;
+let _detailServerInstallDir = '';
+
+async function openServerDetail(serverId) {
+  _detailServerId = serverId;
+  const s = await api('/api/servers.php?id=' + serverId).catch(() => null);
+  if (s) {
+    _detailServerInstallDir = s.install_dir || '';
+    document.getElementById('detail-modal-title').textContent = s.name + ' — Management';
+  }
+  openModal('detail-modal');
+  showDetailTab('variables');
+}
+
+function showDetailTab(name) {
+  ['variables','backups','schedules','files'].forEach(t => {
+    const el  = document.getElementById('detail-tab-' + t);
+    const btn = document.getElementById('dtab-' + t);
+    if (el)  el.style.display  = t === name ? '' : 'none';
+    if (btn) btn.classList.toggle('active', t === name);
+  });
+  if (name === 'variables') loadVariables();
+  if (name === 'backups')   loadBackups();
+  if (name === 'schedules') loadSchedules();
+  if (name === 'files')     loadFiles(_detailServerInstallDir);
+}
+
+// ── Variables ────────────────────────────────────────────────────────────────
+async function loadVariables() {
+  const el = document.getElementById('vars-list');
+  if (!el || !_detailServerId) return;
+  try {
+    const vars = await api('/api/servers.php?id=' + _detailServerId + '&variables=1');
+    if (!vars || !Object.keys(vars).length) {
+      el.innerHTML = '<p class="text-muted">No variables configured for this server.</p>';
+      return;
+    }
+    el.innerHTML = Object.entries(vars).map(([k, v]) => `
+      <div class="form-row" style="margin-bottom:0.5rem">
+        <div class="form-group" style="flex:0;min-width:180px">
+          <label class="form-label"><code>{${escHtml(k)}}</code></label>
+        </div>
+        <div class="form-group" style="flex:2">
+          <input type="text" class="form-input var-input" data-key="${escHtml(k)}" value="${escHtml(String(v))}">
+        </div>
+      </div>`).join('');
+  } catch (e) { el.innerHTML = `<p class="text-muted">${escHtml(e.message)}</p>`; }
+}
+
+async function saveVariables() {
+  const inputs = document.querySelectorAll('#vars-list .var-input');
+  const body = {};
+  inputs.forEach(el => { body[el.dataset.key] = el.value; });
+  try {
+    await api('/api/servers.php?id=' + _detailServerId + '&variables=1', { method: 'PUT', body: JSON.stringify(body) });
+    toast('Variables saved');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Backups ───────────────────────────────────────────────────────────────────
+async function loadBackups() {
+  const el = document.getElementById('backups-list');
+  if (!el || !_detailServerId) return;
+  el.textContent = 'Loading…';
+  try {
+    const list = await api('/api/backups.php?server_id=' + _detailServerId);
+    if (!list.length) { el.innerHTML = '<p class="text-muted">No backups yet.</p>'; return; }
+    el.innerHTML = `<table class="data-table">
+      <thead><tr><th>Name</th><th>Size</th><th>Status</th><th>Created</th><th style="width:120px"></th></tr></thead>
+      <tbody>${list.map(b => `
+        <tr id="backup-row-${b.id}">
+          <td>${escHtml(b.name || 'backup-' + b.id)}</td>
+          <td>${b.size_bytes ? formatBytes(b.size_bytes) : '—'}</td>
+          <td><span class="status-badge status-${escHtml(b.status)}">${escHtml(b.status)}</span></td>
+          <td style="font-size:.8rem;color:var(--text-muted)">${escHtml(b.created_at || '')}</td>
+          <td>
+            ${b.status === 'complete' ? `<a href="${BASE}/api/backups.php?id=${b.id}&action=download" class="btn btn-ghost btn-sm">⬇</a>` : ''}
+            <button class="btn btn-danger btn-sm" onclick="deleteBackup(${b.id})">🗑</button>
+          </td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  } catch (e) { el.innerHTML = `<p class="text-muted">${escHtml(e.message)}</p>`; }
+}
+
+async function createBackup() {
+  try {
+    await api('/api/backups.php', { method: 'POST', body: JSON.stringify({ server_id: _detailServerId }) });
+    toast('Backup started…');
+    setTimeout(loadBackups, 2000);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteBackup(id) {
+  if (!confirm('Delete this backup? This cannot be undone.')) return;
+  try {
+    await api('/api/backups.php?id=' + id, { method: 'DELETE' });
+    const row = document.getElementById('backup-row-' + id);
+    if (row) row.remove();
+    toast('Backup deleted');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function formatBytes(b) {
+  if (b < 1024)       return b + ' B';
+  if (b < 1048576)    return (b/1024).toFixed(1) + ' KB';
+  if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+  return (b/1073741824).toFixed(2) + ' GB';
+}
+
+// ── Schedules ─────────────────────────────────────────────────────────────────
+async function loadSchedules() {
+  const el = document.getElementById('schedules-list');
+  if (!el || !_detailServerId) return;
+  el.textContent = 'Loading…';
+  try {
+    const list = await api('/api/schedules.php?server_id=' + _detailServerId);
+    if (!list.length) { el.innerHTML = '<p class="text-muted">No schedules yet.</p>'; return; }
+    el.innerHTML = `<table class="data-table">
+      <thead><tr><th>Cron</th><th>Action</th><th>Active</th><th style="width:80px"></th></tr></thead>
+      <tbody>${list.map(s => `
+        <tr id="sched-row-${s.id}">
+          <td><code>${escHtml(s.cron_expression)}</code></td>
+          <td><span class="badge">${escHtml(s.action)}</span></td>
+          <td>${s.is_active ? '✓' : '—'}</td>
+          <td>
+            <button class="btn btn-ghost btn-sm" onclick="editSchedule(${JSON.stringify(s).replace(/"/g,'&quot;')})">✎</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteSchedule(${s.id})">🗑</button>
+          </td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  } catch (e) { el.innerHTML = `<p class="text-muted">${escHtml(e.message)}</p>`; }
+}
+
+function openScheduleForm() {
+  document.getElementById('sched-id').value     = '';
+  document.getElementById('sched-cron').value   = '';
+  document.getElementById('sched-action').value = 'start';
+  document.getElementById('sched-active').checked = true;
+  document.getElementById('schedule-form').style.display = '';
+}
+
+function editSchedule(s) {
+  document.getElementById('sched-id').value       = s.id;
+  document.getElementById('sched-cron').value     = s.cron_expression;
+  document.getElementById('sched-action').value   = s.action;
+  document.getElementById('sched-active').checked = !!s.is_active;
+  document.getElementById('schedule-form').style.display = '';
+}
+
+async function saveSchedule() {
+  const id    = document.getElementById('sched-id').value;
+  const body  = {
+    server_id:       _detailServerId,
+    cron_expression: document.getElementById('sched-cron').value.trim(),
+    action:          document.getElementById('sched-action').value,
+    is_active:       document.getElementById('sched-active').checked ? 1 : 0,
+  };
+  try {
+    if (id) await api('/api/schedules.php?id=' + id, { method: 'PUT',  body: JSON.stringify(body) });
+    else    await api('/api/schedules.php',           { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById('schedule-form').style.display = 'none';
+    toast('Schedule saved');
+    loadSchedules();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteSchedule(id) {
+  if (!confirm('Delete this schedule?')) return;
+  try {
+    await api('/api/schedules.php?id=' + id, { method: 'DELETE' });
+    const row = document.getElementById('sched-row-' + id);
+    if (row) row.remove();
+    toast('Schedule deleted');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── File Manager ──────────────────────────────────────────────────────────────
+let _filePath = '';
+
+async function loadFiles(dir) {
+  _filePath = dir || _detailServerInstallDir;
+  const area   = document.getElementById('file-list-area');
+  const crumb  = document.getElementById('file-breadcrumb');
+  if (!area) return;
+  area.textContent = 'Loading…';
+
+  // Build breadcrumb
+  if (crumb) {
+    const base = _detailServerInstallDir;
+    const rel  = _filePath.startsWith(base) ? _filePath.slice(base.length) : _filePath;
+    const parts = rel.split('/').filter(Boolean);
+    let html = `<span class="crumb-item" style="cursor:pointer" onclick="loadFiles('${escHtml(base)}')">~/server</span>`;
+    let cumPath = base;
+    parts.forEach((p, i) => {
+      cumPath += '/' + p;
+      const cp = cumPath;
+      html += ` / <span class="crumb-item" style="cursor:pointer" onclick="loadFiles('${escHtml(cp)}')">${escHtml(p)}</span>`;
+    });
+    crumb.innerHTML = html;
+  }
+
+  try {
+    const d = await api('/api/file.php?path=' + encodeURIComponent(_filePath));
+    if (d.items !== undefined) {
+      // Directory listing
+      if (!d.items.length) { area.innerHTML = '<p class="text-muted">Empty directory.</p>'; return; }
+      area.innerHTML = `
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+          <button class="btn btn-sm btn-secondary" onclick="promptMkdir()">New Folder</button>
+          <label class="btn btn-sm btn-secondary" style="cursor:pointer">
+            Upload <input type="file" style="display:none" onchange="uploadFile(this)">
+          </label>
+        </div>
+        <table class="data-table">
+        <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th style="width:100px"></th></tr></thead>
+        <tbody>${d.items.map(f => `
+          <tr>
+            <td style="cursor:pointer" onclick="${f.is_dir ? `loadFiles('${escHtml(f.path)}')` : `openRemoteFile('${escHtml(f.path)}')`}">
+              ${f.is_dir ? '📁' : '📄'} ${escHtml(f.name)}
+            </td>
+            <td style="font-size:.8rem;color:var(--text-muted)">${f.is_dir ? '' : formatBytes(f.size || 0)}</td>
+            <td style="font-size:.8rem;color:var(--text-muted)">${new Date((f.modified||0)*1000).toLocaleDateString()}</td>
+            <td>
+              <button class="btn btn-ghost btn-sm" onclick="promptRename('${escHtml(f.path)}','${escHtml(f.name)}')">✎</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteRemoteFile('${escHtml(f.path)}','${escHtml(f.name)}')">🗑</button>
+            </td>
+          </tr>`).join('')}
+        </tbody></table>`;
+    } else if (d.content !== undefined) {
+      // File content editor
+      area.innerHTML = `
+        <button class="btn btn-sm btn-ghost" style="margin-bottom:0.5rem" onclick="loadFiles('${escHtml(_filePath.split('/').slice(0,-1).join('/'))}')">← Back</button>
+        <textarea id="remote-file-ta" class="form-input" rows="20" style="font-family:monospace;font-size:.8rem;width:100%">${escHtml(d.content)}</textarea>
+        <div style="margin-top:0.5rem;display:flex;gap:0.5rem">
+          <button class="btn btn-primary btn-sm" onclick="saveRemoteFile()">Save</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadFiles('${escHtml(_filePath.split('/').slice(0,-1).join('/'))}')">Cancel</button>
+        </div>`;
+    }
+  } catch (e) { area.innerHTML = `<p class="text-muted">${escHtml(e.message)}</p>`; }
+}
+
+async function openRemoteFile(path) {
+  _filePath = path;
+  await loadFiles(path);
+}
+
+async function saveRemoteFile() {
+  const ta = document.getElementById('remote-file-ta');
+  if (!ta) return;
+  try {
+    await api('/api/file.php?path=' + encodeURIComponent(_filePath), { method: 'PUT', body: JSON.stringify({ content: ta.value }) });
+    toast('File saved');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function promptMkdir() {
+  const name = prompt('New folder name:');
+  if (!name) return;
+  try {
+    await api('/api/file.php?action=mkdir&path=' + encodeURIComponent(_filePath + '/' + name), { method: 'POST' });
+    toast('Folder created');
+    loadFiles(_filePath);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function uploadFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  form.append('path', _filePath);
+  try {
+    const r = await fetch(BASE + '/api/file.php?action=upload', { method: 'POST', body: form });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Upload failed');
+    toast('File uploaded');
+    loadFiles(_filePath);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function promptRename(path, currentName) {
+  const newName = prompt('Rename to:', currentName);
+  if (!newName || newName === currentName) return;
+  try {
+    await api('/api/file.php?action=rename&path=' + encodeURIComponent(path), { method: 'POST', body: JSON.stringify({ new_name: newName }) });
+    toast('Renamed');
+    loadFiles(_filePath);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteRemoteFile(path, name) {
+  if (!confirm('Delete "' + name + '"? This cannot be undone.')) return;
+  try {
+    await api('/api/file.php?path=' + encodeURIComponent(path), { method: 'DELETE' });
+    toast('Deleted');
+    loadFiles(_filePath);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Users page ────────────────────────────────────────────────────────────────
+let _editUserId = null;
+let _permsUserId = null;
+let _permServers = [];
+
+async function loadUsers() {
+  if (!document.getElementById('users-tbody')) return;
+  try {
+    const users = await api('/api/users.php');
+    const tbody = document.getElementById('users-tbody');
+    if (!users.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-row">No users yet.</td></tr>'; return; }
+    tbody.innerHTML = users.map(u => `
+      <tr>
+        <td><strong>${escHtml(u.username)}</strong></td>
+        <td>${escHtml(u.email || '—')}</td>
+        <td><span class="badge ${u.role === 'admin' ? 'badge-blue' : ''}">${escHtml(u.role)}</span></td>
+        <td><span class="status-badge status-${u.is_active ? 'running' : 'stopped'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td style="font-size:.8rem;color:var(--text-muted)">${escHtml(u.created_at || '')}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="openUserModal(${JSON.stringify(u).replace(/"/g,'&quot;')})">✎</button>
+          ${u.role !== 'admin' ? `<button class="btn btn-ghost btn-sm" onclick="openPermsModal(${u.id}, '${escHtml(u.username)}')">🔑</button>` : ''}
+          <button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id}, '${escHtml(u.username)}')">🗑</button>
+        </td>
+      </tr>`).join('');
+  } catch (e) { console.error(e); }
+}
+
+function openUserModal(user) {
+  _editUserId = user?.id || null;
+  document.getElementById('user-modal-title').textContent = _editUserId ? 'Edit User' : 'Add User';
+  document.getElementById('user-id').value       = _editUserId || '';
+  document.getElementById('user-username').value = user?.username || '';
+  document.getElementById('user-email').value    = user?.email || '';
+  document.getElementById('user-role').value     = user?.role || 'subuser';
+  document.getElementById('user-password').value = '';
+  document.getElementById('user-password-confirm').value = '';
+  document.getElementById('user-pass-label').textContent = _editUserId ? 'New Password (leave blank to keep)' : 'Password *';
+  document.getElementById('user-active-group').style.display = _editUserId ? '' : 'none';
+  if (_editUserId) document.getElementById('user-active').checked = !!user?.is_active;
+  openModal('user-modal');
+}
+
+function closeUserModal() { closeModal('user-modal'); }
+
+async function saveUser() {
+  const id   = document.getElementById('user-id').value;
+  const pass = document.getElementById('user-password').value;
+  const conf = document.getElementById('user-password-confirm').value;
+  if (pass && pass !== conf) { toast('Passwords do not match', 'error'); return; }
+  const body = {
+    username: document.getElementById('user-username').value.trim(),
+    email:    document.getElementById('user-email').value.trim(),
+    role:     document.getElementById('user-role').value,
+  };
+  if (pass) body.password = pass;
+  if (id)   body.is_active = document.getElementById('user-active').checked ? 1 : 0;
+  try {
+    if (id) await api('/api/users.php?id=' + id, { method: 'PUT',  body: JSON.stringify(body) });
+    else    await api('/api/users.php',           { method: 'POST', body: JSON.stringify(body) });
+    toast('User saved');
+    closeUserModal();
+    loadUsers();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteUser(id, name) {
+  if (!confirm('Delete user "' + name + '"?')) return;
+  try {
+    await api('/api/users.php?id=' + id, { method: 'DELETE' });
+    toast('User deleted');
+    loadUsers();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function openPermsModal(userId, username) {
+  _permsUserId = userId;
+  document.getElementById('perms-modal-title').textContent = username + ' — Server Permissions';
+  const list = document.getElementById('perms-list');
+  list.innerHTML = 'Loading…';
+  openModal('perms-modal');
+  try {
+    const [servers, userData] = await Promise.all([
+      api('/api/servers.php'),
+      api('/api/users.php?id=' + userId),
+    ]);
+    _permServers = servers;
+    const perms = Array.isArray(userData.permissions) ? userData.permissions : [];
+    const permsMap = {};
+    perms.forEach(p => { permsMap[p.server_id] = p; });
+    const PERM_KEYS = ['can_start','can_stop','can_console','can_files','can_backups','can_edit_startup'];
+    list.innerHTML = servers.map(s => {
+      const p = permsMap[s.id] || {};
+      return `<div style="margin-bottom:1rem;padding:0.75rem;background:var(--bg-section,rgba(0,0,0,.2));border-radius:var(--radius)">
+        <strong>${escHtml(s.name)}</strong>
+        <div style="display:flex;flex-wrap:wrap;gap:0.75rem;margin-top:0.5rem">
+          ${PERM_KEYS.map(k => `<label class="checkbox-label"><input type="checkbox" class="perm-cb" data-server="${s.id}" data-perm="${k}" ${p[k] ? 'checked' : ''}> ${k.replace('can_','')}</label>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) { list.innerHTML = `<p class="text-muted">${escHtml(e.message)}</p>`; }
+}
+
+function closePermsModal() { closeModal('perms-modal'); }
+
+async function savePermissions() {
+  for (const s of _permServers) {
+    const cbs = document.querySelectorAll(`.perm-cb[data-server="${s.id}"]`);
+    const perms = {};
+    cbs.forEach(cb => { perms[cb.dataset.perm] = cb.checked ? 1 : 0; });
+    try {
+      await api('/api/users.php?action=permissions', { method: 'PUT', body: JSON.stringify({ user_id: _permsUserId, server_id: s.id, ...perms }) });
+    } catch {}
+  }
+  toast('Permissions saved');
+  closePermsModal();
+}
+
+// ── Mojos page ────────────────────────────────────────────────────────────────
+let _editMojoId = null;
+let _mojoVarCounter = 0;
+
+async function loadMojos() {
+  if (!document.getElementById('mojos-tbody')) return;
+  try {
+    const mojos = await api('/api/servers.php?mojos=1');
+    const tbody = document.getElementById('mojos-tbody');
+    if (!mojos.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No Mojos found.</td></tr>'; return; }
+    tbody.innerHTML = mojos.map(m => `
+      <tr>
+        <td><strong>${escHtml(m.name)}</strong></td>
+        <td>${escHtml(m.app_id || '—')}</td>
+        <td>${(m.variables || []).length}</td>
+        <td>${m.is_builtin ? '<span class="badge">built-in</span>' : '<span class="badge badge-blue">custom</span>'}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="openMojoModal(${JSON.stringify(m).replace(/"/g,'&quot;')})">✎</button>
+          ${!m.is_builtin ? `<button class="btn btn-danger btn-sm" onclick="deleteMojo(${m.id})">🗑</button>` : ''}
+        </td>
+      </tr>`).join('');
+  } catch (e) { console.error(e); }
+}
+
+function openMojoModal(mojo) {
+  _editMojoId = mojo?.id || null;
+  document.getElementById('mojo-modal-title').textContent = _editMojoId ? 'Edit Mojo' : 'New Mojo';
+  document.getElementById('mojo-id').value           = _editMojoId || '';
+  document.getElementById('mojo-name').value         = mojo?.name || '';
+  document.getElementById('mojo-app-id').value       = mojo?.app_id || '';
+  document.getElementById('mojo-docker-image').value = mojo?.docker_image || '';
+  document.getElementById('mojo-executable').value   = mojo?.launch_executable || '';
+  document.getElementById('mojo-startup').value      = mojo?.startup_template || '';
+  document.getElementById('mojo-port').value         = mojo?.port || '';
+  document.getElementById('mojo-max-players').value  = mojo?.max_players || '';
+  document.getElementById('mojo-requires-login').checked = !!mojo?.requires_login;
+
+  const varsList = document.getElementById('mojo-vars-list');
+  varsList.innerHTML = '';
+  _mojoVarCounter = 0;
+  (mojo?.variables || []).forEach(v => addMojoVar(v));
+  openModal('mojo-modal');
+}
+
+function closeMojoModal() { closeModal('mojo-modal'); }
+
+function addMojoVar(v) {
+  const i = _mojoVarCounter++;
+  const div = document.createElement('div');
+  div.className = 'form-row mojo-var-row';
+  div.dataset.idx = i;
+  if (v?.id) div.dataset.varId = v.id;
+  div.innerHTML = `
+    <div class="form-group"><input type="text" class="form-input" placeholder="Name" value="${escHtml(v?.name||'')}"></div>
+    <div class="form-group"><input type="text" class="form-input" placeholder="ENV_VARIABLE" value="${escHtml(v?.env_variable||'')}"></div>
+    <div class="form-group" style="flex:2"><input type="text" class="form-input" placeholder="Default value" value="${escHtml(v?.default_value||'')}"></div>
+    <div class="form-group" style="flex:0;align-self:flex-end">
+      <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.mojo-var-row').remove()">✕</button>
+    </div>`;
+  document.getElementById('mojo-vars-list').appendChild(div);
+}
+
+async function saveMojo() {
+  const id   = document.getElementById('mojo-id').value;
+  const vars = [];
+  document.querySelectorAll('.mojo-var-row').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const entry = { name: inputs[0].value, env_variable: inputs[1].value, default_value: inputs[2].value };
+    if (row.dataset.varId) entry.id = parseInt(row.dataset.varId);
+    if (entry.name || entry.env_variable) vars.push(entry);
+  });
+  const body = {
+    name:              document.getElementById('mojo-name').value.trim(),
+    app_id:            document.getElementById('mojo-app-id').value.trim(),
+    docker_image:      document.getElementById('mojo-docker-image').value.trim(),
+    launch_executable: document.getElementById('mojo-executable').value.trim(),
+    startup_template:  document.getElementById('mojo-startup').value.trim(),
+    port:              parseInt(document.getElementById('mojo-port').value) || 0,
+    max_players:       parseInt(document.getElementById('mojo-max-players').value) || 0,
+    requires_login:    document.getElementById('mojo-requires-login').checked ? 1 : 0,
+    variables: vars,
+  };
+  try {
+    if (id) await api('/api/mojos.php?id=' + id, { method: 'PUT',  body: JSON.stringify(body) });
+    else    await api('/api/mojos.php',           { method: 'POST', body: JSON.stringify(body) });
+    toast('Mojo saved');
+    closeMojoModal();
+    loadMojos();
+    _allMojos = []; // invalidate cache
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteMojo(id) {
+  if (!confirm('Delete this Mojo?')) return;
+  try {
+    await api('/api/mojos.php?id=' + id, { method: 'DELETE' });
+    toast('Mojo deleted');
+    loadMojos();
+    _allMojos = [];
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Activity page ─────────────────────────────────────────────────────────────
+let _activityPage = 0;
+const ACTIVITY_LIMIT = 50;
+
+async function loadActivity() {
+  const tbody   = document.getElementById('activity-tbody');
+  if (!tbody) return;
+  const serverId = document.getElementById('activity-server-filter')?.value || '';
+  try {
+    const url = '/api/activity.php?limit=' + ACTIVITY_LIMIT + '&offset=' + (_activityPage * ACTIVITY_LIMIT) + (serverId ? '&server_id=' + serverId : '');
+    const rows = await api(url);
+    document.getElementById('activity-page-label').textContent = 'Page ' + (_activityPage + 1);
+    document.getElementById('activity-prev').disabled = _activityPage === 0;
+    document.getElementById('activity-next').disabled = rows.length < ACTIVITY_LIMIT;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-row">No activity recorded.</td></tr>'; return; }
+    tbody.innerHTML = rows.map(a => `
+      <tr>
+        <td style="font-size:.8rem;color:var(--text-muted);white-space:nowrap">${escHtml(a.created_at || '')}</td>
+        <td>${escHtml(a.username || 'system')}</td>
+        <td>${escHtml(a.server_name || '—')}</td>
+        <td><span class="badge badge-neutral">${escHtml(a.action)}</span></td>
+        <td>${escHtml(a.description || '')}</td>
+        <td style="font-size:.75rem;color:var(--text-muted)">${escHtml(a.ip_address || '')}</td>
+      </tr>`).join('');
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="6" class="text-muted">${escHtml(e.message)}</td></tr>`; }
+}
+
+function activityPage(delta) {
+  _activityPage = Math.max(0, _activityPage + delta);
+  loadActivity();
+}
+
+async function populateActivityServerFilter() {
+  const sel = document.getElementById('activity-server-filter');
+  if (!sel) return;
+  try {
+    const servers = await api('/api/servers.php');
+    servers.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+
+// ── Webhooks ──────────────────────────────────────────────────────────────────
+async function loadWebhooks() {
+  const tbody = document.getElementById('webhooks-tbody');
+  if (!tbody) return;
+  try {
+    const hooks = await api('/api/webhooks.php');
+    if (!hooks.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No webhooks configured.</td></tr>'; return; }
+    tbody.innerHTML = hooks.map(h => `
+      <tr>
+        <td style="word-break:break-all;font-size:.85rem">${escHtml(h.url)}</td>
+        <td style="font-size:.8rem">${escHtml(h.events || '*')}</td>
+        <td><span class="status-badge status-${h.is_active ? 'running' : 'stopped'}">${h.is_active ? 'Active' : 'Paused'}</span></td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="openWebhookModal(${JSON.stringify(h).replace(/"/g,'&quot;')})">✎</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteWebhook(${h.id})">🗑</button>
+        </td>
+      </tr>`).join('');
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="4" class="text-muted">${escHtml(e.message)}</td></tr>`; }
+}
+
+function openWebhookModal(hook) {
+  document.getElementById('wh-id').value     = hook?.id || '';
+  document.getElementById('wh-url').value    = hook?.url || '';
+  document.getElementById('wh-secret').value = '';
+  document.getElementById('wh-events').value = hook?.events || '*';
+  document.getElementById('wh-active').checked = hook ? !!hook.is_active : true;
+  document.getElementById('webhook-modal-title').textContent = hook?.id ? 'Edit Webhook' : 'Add Webhook';
+  openModal('webhook-modal');
+}
+function closeWebhookModal() { closeModal('webhook-modal'); }
+
+async function saveWebhook() {
+  const id = document.getElementById('wh-id').value;
+  const body = {
+    url:       document.getElementById('wh-url').value.trim(),
+    events:    document.getElementById('wh-events').value.trim() || '*',
+    is_active: document.getElementById('wh-active').checked ? 1 : 0,
+  };
+  const secret = document.getElementById('wh-secret').value.trim();
+  if (secret) body.secret = secret;
+  try {
+    if (id) await api('/api/webhooks.php?id=' + id, { method: 'PUT',  body: JSON.stringify(body) });
+    else    await api('/api/webhooks.php',           { method: 'POST', body: JSON.stringify(body) });
+    toast('Webhook saved');
+    closeWebhookModal();
+    loadWebhooks();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteWebhook(id) {
+  if (!confirm('Delete this webhook?')) return;
+  try {
+    await api('/api/webhooks.php?id=' + id, { method: 'DELETE' });
+    toast('Webhook deleted');
+    loadWebhooks();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Page auto-init ────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (document.getElementById('users-tbody'))     loadUsers();
+  if (document.getElementById('mojos-tbody'))     loadMojos();
+  if (document.getElementById('activity-tbody')) { populateActivityServerFilter(); loadActivity(); }
+  if (document.getElementById('webhooks-tbody'))  loadWebhooks();
+  // On settings page, load webhooks when tab is clicked (already handled by switchTab + load)
+});

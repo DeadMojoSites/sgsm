@@ -9,6 +9,7 @@
   <button class="tab-btn" onclick="switchTab('database',this)">Database</button>
   <button class="tab-btn" onclick="switchTab('apikeys',this)">API Keys</button>
   <button class="tab-btn" onclick="switchTab('security',this)">Security</button>
+  <button class="tab-btn" onclick="switchTab('webhooks',this)">Webhooks</button>
   <button class="tab-btn" onclick="switchTab('updates',this)">Updates</button>
 </div>
 
@@ -149,6 +150,54 @@
       <div class="form-group"><label class="form-label">New Password</label><input class="form-control" type="password" id="pw-new" minlength="8"></div>
       <div class="form-group"><label class="form-label">Confirm New Password</label><input class="form-control" type="password" id="pw-confirm"></div>
       <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Webhooks -->
+<div class="tab-panel" id="tab-webhooks" style="display:none">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Outbound Webhooks</h3>
+      <button class="btn btn-primary btn-sm" onclick="openWebhookModal()">Add Webhook</button>
+    </div>
+    <div class="card-body" style="padding:0">
+      <table class="data-table" id="webhooks-table">
+        <thead><tr><th>URL</th><th>Events</th><th>Status</th><th style="width:100px"></th></tr></thead>
+        <tbody id="webhooks-tbody"><tr><td colspan="4" class="empty-row">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Webhook Modal -->
+<div class="modal-overlay" id="webhook-modal" style="display:none">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h2 class="modal-title" id="webhook-modal-title">Add Webhook</h2>
+      <button class="modal-close" onclick="closeWebhookModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="wh-id">
+      <div class="form-group">
+        <label class="form-label">URL <span class="required">*</span></label>
+        <input type="url" class="form-input" id="wh-url" placeholder="https://example.com/hook">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Secret (optional, for HMAC signature)</label>
+        <input type="text" class="form-input" id="wh-secret" placeholder="leave blank to skip signing">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Events <span class="text-muted">(comma-separated, or * for all)</span></label>
+        <input type="text" class="form-input" id="wh-events" placeholder="server.started,server.stopped,backup.created">
+      </div>
+      <div class="form-group">
+        <label class="checkbox-label"><input type="checkbox" id="wh-active" checked> Active</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeWebhookModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveWebhook()">Save</button>
     </div>
   </div>
 </div>

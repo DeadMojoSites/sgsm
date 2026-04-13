@@ -3,15 +3,52 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/docker.php';
 
+// ── Session helpers ───────────────────────────────────────────────────────────
+
 function isLoggedIn(): bool {
-    return !empty($_SESSION['gsm_user']);
+    return !empty($_SESSION['gsm_user_id']);
 }
 
 function requireAuth(): void {
-    if (!isLoggedIn()) {
-        jsonError('Unauthorized', 401);
+    if (!isLoggedIn()) jsonError('Unauthorized', 401);
+}
+
+function requireAdmin(): void {
+    if (!isLoggedIn() || ($_SESSION['gsm_role'] ?? '') !== 'admin') {
+        jsonError('Forbidden', 403);
     }
 }
+
+function isAdmin(): bool {
+    return ($_SESSION['gsm_role'] ?? '') === 'admin';
+}
+
+function currentUserId(): int {
+    return (int)($_SESSION['gsm_user_id'] ?? 0);
+}
+
+function currentRole(): string {
+    return (string)($_SESSION['gsm_role'] ?? '');
+}
+
+function currentUsername(): string {
+    return (string)($_SESSION['gsm_username'] ?? '');
+}
+
+function hasServerPermission(int $serverId, string $perm): bool {
+    if (isAdmin()) return true;
+    $uid = currentUserId();
+    if (!$uid) return false;
+    static $cache = [];
+    $key = "$uid:$serverId";
+    if (!isset($cache[$key])) {
+        $db = new GSM_DB();
+        $cache[$key] = $db->getPermissionsForServer($uid, $serverId) ?: [];
+    }
+    return !empty($cache[$key][$perm]);
+}
+
+// ── Response helpers ──────────────────────────────────────────────────────────
 
 function jsonResponse(mixed $data, int $code = 200): never {
     http_response_code($code);
@@ -33,58 +70,86 @@ function getBody(): array {
     return $body;
 }
 
+// ── Activity & webhooks ───────────────────────────────────────────────────────
+
+function logActivity(string $action, string $description = '', ?int $serverId = null): void {
+    $db  = new GSM_DB();
+    $ip  = $_SERVER['REMOTE_ADDR'] ?? '';
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $fwd = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0];
+        $ip  = filter_var(trim($fwd), FILTER_VALIDATE_IP) ?: $ip;
+    }
+    $db->logActivity(currentUserId() ?: null, $serverId, $action, $description, $ip);
+}
+
+function fireWebhook(string $event, array $data): void {
+    $db    = new GSM_DB();
+    $hooks = $db->getWebhooksByEvent($event);
+    if (!$hooks) return;
+    $payload = json_encode(['event' => $event, 'data' => $data, 'timestamp' => time()]);
+    foreach ($hooks as $hook) {
+        $headers = ['Content-Type: application/json'];
+        if ($hook['secret']) {
+            $sig       = hash_hmac('sha256', $payload, $hook['secret']);
+            $headers[] = 'X-GSM-Signature: sha256=' . $sig;
+        }
+        $ctx = stream_context_create(['http' => [
+            'method'         => 'POST',
+            'header'         => implode("\r\n", $headers),
+            'content'        => $payload,
+            'timeout'        => 5,
+            'ignore_errors'  => true,
+        ]]);
+        @file_get_contents($hook['url'], false, $ctx);
+    }
+}
+
+// ── Encryption (AES-256-CBC via APP_KEY env var) ──────────────────────────────
+
+function encryptValue(string $value): string {
+    $key = (string)getenv('APP_KEY');
+    if (!$key || $value === '') return $value;
+    $iv        = random_bytes(16);
+    $encrypted = openssl_encrypt($value, 'AES-256-CBC', hash('sha256', $key, true), OPENSSL_RAW_DATA, $iv);
+    return base64_encode($iv . $encrypted);
+}
+
+function decryptValue(string $value): string {
+    $key = (string)getenv('APP_KEY');
+    if (!$key || $value === '') return $value;
+    $raw = base64_decode($value, true);
+    if ($raw === false || strlen($raw) < 17) return $value;
+    $iv        = substr($raw, 0, 16);
+    $encrypted = substr($raw, 16);
+    return openssl_decrypt($encrypted, 'AES-256-CBC', hash('sha256', $key, true), OPENSSL_RAW_DATA, $iv) ?: $value;
+}
+
 // ── Docker helpers ────────────────────────────────────────────────────────────
 
-/** Canonical container name for a server ID. */
 function containerName(int $id): string {
     return 'gsm-server-' . $id;
 }
 
-/** Return a shared DockerClient instance (lazy init). */
 function docker(): DockerClient {
     static $client = null;
     if ($client === null) $client = new DockerClient();
     return $client;
 }
 
-/**
- * Check whether a server container is still running.
- * Replaces isProcessRunning().
- */
 function isContainerRunning(string $containerId): bool {
     if (!$containerId) return false;
-    try {
-        return docker()->isRunning($containerId);
-    } catch (RuntimeException) {
-        return false;
-    }
+    try { return docker()->isRunning($containerId); } catch (RuntimeException) { return false; }
 }
 
-/**
- * Stop and remove a server container.
- * Replaces killProcess().
- */
 function stopContainer(string $containerId, int $timeout = 10): void {
     if (!$containerId) return;
     try {
         $d = docker();
         $d->stopContainer($containerId, $timeout);
         $d->removeContainer($containerId);
-    } catch (RuntimeException) {
-        // Best-effort — container may already be gone
-    }
+    } catch (RuntimeException) {}
 }
 
-// ── Arma Reforger config helpers ──────────────────────────────────────────────
-
-/**
- * Convert a path inside the panel container to the corresponding host path.
- * Docker daemon mounts from the host — not from inside the panel container.
- *
- * docker-compose.yml mounts  ./gsm_servers → /opt/servers  in the panel, and
- * sets GSM_SERVERS_HOST_PATH to the absolute host path of ./gsm_servers so that
- * game containers can be given the correct bind-mount source.
- */
 function hostPath(string $containerPath): string {
     static $base = null;
     if ($base === null) {
@@ -93,10 +158,10 @@ function hostPath(string $containerPath): string {
     if ($base && str_starts_with($containerPath, '/opt/servers/')) {
         return $base . '/' . substr($containerPath, strlen('/opt/servers/'));
     }
-    // Fallback: path as-is (direct host install, dev environment)
     return $containerPath;
 }
 
+// ── Arma Reforger config helper ───────────────────────────────────────────────
 
 /**
  * Ensure config.json exists for Arma Reforger and strip forbidden DS 1.6+ fields.
