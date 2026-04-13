@@ -11,9 +11,9 @@ chmod -R 755 "${DATA_DIR}"
 chown -R www-data:www-data /opt/servers /opt/steamcmd 2>/dev/null || true
 
 # Start cron daemon for scheduled tasks (runs cron.php every minute)
+mkdir -p /etc/cron.d
 echo "* * * * * www-data php /var/www/html/cron.php >> /var/log/gsm-cron.log 2>&1" > /etc/cron.d/gsm
 chmod 0644 /etc/cron.d/gsm
-crontab /etc/cron.d/gsm
-service cron start || crond -b -l 8 || true
+service cron start 2>/dev/null || crond -b -l 8 2>/dev/null || true
 
 exec "$@"

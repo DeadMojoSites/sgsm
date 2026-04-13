@@ -12,6 +12,7 @@ RUN apt-get update && \
         ca-certificates \
         wget \
         curl \
+        cron \
         libsqlite3-dev \
         libcurl4-openssl-dev \
     && docker-php-ext-install pdo pdo_sqlite curl \
