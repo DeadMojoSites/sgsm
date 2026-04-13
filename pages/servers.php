@@ -30,7 +30,13 @@
           <?php elseif ($s['status'] === 'installing'): ?>
             <button class="btn btn-warning btn-sm" onclick="serverAction(<?= $id ?>,'cancel-install')" title="Cancel">✕</button>
           <?php endif; ?>
-          <button class="btn btn-ghost btn-sm" onclick="openConsole(<?= $id ?>, '<?= $s['status'] === 'installing' ? 'install' : 'server' ?>')" title="Console">⌨</button>
+          <?php
+            // Show install log if currently installing, or if server has never been started (no server log yet)
+            $serverLog  = DATA_DIR . '/logs/server-'  . $id . '.log';
+            $installLog = DATA_DIR . '/logs/install-' . $id . '.log';
+            $consoleType = ($s['status'] === 'installing' || (!file_exists($serverLog) && file_exists($installLog))) ? 'install' : 'server';
+          ?>
+          <button class="btn btn-ghost btn-sm" onclick="openConsole(<?= $id ?>, '<?= $consoleType ?>')" title="Console">⌨</button>
           <button class="btn btn-ghost btn-sm" onclick="serverAction(<?= $id ?>,'install')" title="Install/Update">⬇</button>
           <button class="btn btn-ghost btn-sm" onclick="openServerModal(<?= htmlspecialchars(json_encode($s), ENT_QUOTES) ?>)" title="Edit">✎</button>
           <button class="btn btn-danger btn-sm"  onclick="deleteServer(<?= $id ?>, '<?= htmlspecialchars($s['name'], ENT_QUOTES) ?>')" title="Delete">🗑</button>

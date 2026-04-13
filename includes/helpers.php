@@ -125,8 +125,12 @@ function installServer(array $server, string $steamcmdPath): int {
     if (!is_dir(dirname($logFile))) mkdir(dirname($logFile), 0755, true);
     file_put_contents($logFile, '[' . date('Y-m-d H:i:s') . "] --- Installing App ID $appId ---\n");
 
+    // Set HOME to the steamcmd dir so SteamCMD can write its cache there
+    // instead of trying to use /var/www (www-data's default home)
+    $steamHome = dirname($steamcmdPath);
     $cmd = sprintf(
-        'nohup %s +force_install_dir %s +login anonymous +app_update %d validate +quit >> %s 2>&1 & echo $!',
+        'HOME=%s nohup %s +force_install_dir %s +login anonymous +app_update %d validate +quit >> %s 2>&1 & echo $!',
+        escapeshellarg($steamHome),
         escapeshellarg($steamcmdPath),
         escapeshellarg($installDir),
         $appId,
