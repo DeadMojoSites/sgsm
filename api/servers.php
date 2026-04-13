@@ -43,12 +43,21 @@ if (isset($_GET['templates'])) {
 // ── Sync helper ─────────────────────────────────────────────────────────────
 function syncStatus(array &$s): void {
     global $db;
-    if (in_array($s['status'], ['running', 'installing']) && $s['pid']) {
-        if (!isProcessRunning((int)$s['pid'])) {
-            $newStatus = ($s['status'] === 'installing') ? 'stopped' : 'stopped';
-            $db->updateServer((int)$s['id'], ['status' => $newStatus, 'pid' => null]);
-            $s['status'] = $newStatus;
-            $s['pid']    = null;
+    if (in_array($s['status'], ['running', 'installing'])) {
+        $cid = $s['container_id'] ?? '';
+        if (!$cid || !isContainerRunning($cid)) {
+            // Check if it's an install container that exited normally
+            $newStatus = 'stopped';
+            if ($s['status'] === 'installing' && $cid) {
+                $info = docker()->inspectContainer($cid);
+                if ($info !== null && ($info['State']['ExitCode'] ?? 1) === 0) {
+                    // Clean exit — install succeeded, remove the install container
+                    try { docker()->removeContainer($cid, true); } catch (RuntimeException) {}
+                }
+            }
+            $db->updateServer((int)$s['id'], ['status' => $newStatus, 'container_id' => '']);
+            $s['status']       = $newStatus;
+            $s['container_id'] = '';
         }
     }
 }
@@ -92,37 +101,17 @@ if ($method === 'POST' && $id === 0 && $action === '') {
     if (empty(trim($b['install_dir'] ?? ''))) jsonError('Install directory is required');
     $newServer = $db->createServer($b);
 
-    // Pre-create config.json immediately so the setup modal can load and edit it
-    $args = $newServer['launch_args'] ?? '';
+    // Pre-create config.json & profile dir so setup modal can access them immediately
+    $installDir = rtrim($newServer['install_dir'], '/');
+    $args = str_replace('{INSTALL_DIR}', '/server', $newServer['launch_args'] ?? '');
     if (preg_match('/-config\s+(\S+)/', $args, $cfgM)) {
-        $cfgFile = $cfgM[1];
-        if (!file_exists($cfgFile)) {
-            $cfgDir = dirname($cfgFile);
-            if (!is_dir($cfgDir)) mkdir($cfgDir, 0755, true);
-            $port = (int)($newServer['port'] ?? 2001);
-            $maxP = (int)($newServer['max_players'] ?? 32);
-            file_put_contents($cfgFile, json_encode([
-                'dedicatedServerId'              => '',
-                'region'                         => 'EU',
-                'gameHostBindAddress'             => '',
-                'gameHostBindPort'                => $port,
-                'gameHostRegisterBindAddress'     => '',
-                'gameHostRegisterPort'            => $port,
-                'adminPassword'                  => 'changeme',
-                'game' => [
-                    'name'                       => $newServer['name'],
-                    'password'                   => '',
-                    'scenarioId'                 => '{ECC61978EDCC2B5A}Missions/23_Campaign.conf',
-                    'maxPlayers'                 => $maxP,
-                    'visible'                    => true,
-                    'supportedGameClientTypes'   => ['PLATFORM_PC'],
-                ],
-            ], JSON_PRETTY_PRINT) . "\n");
-        }
+        $cfgInContainer = $cfgM[1];
+        $cfgOnHost = str_replace('/server/', $installDir . '/', $cfgInContainer);
+        ensureArmaConfig($cfgOnHost, $newServer);
     }
-    // Pre-create profile directory
-    if (preg_match('/-profile\s+(\S+)/', $args, $profM) && !is_dir($profM[1])) {
-        mkdir($profM[1], 0755, true);
+    if (preg_match('/-profile\s+(\S+)/', $args, $profM)) {
+        $profileOnHost = str_replace('/server/', $installDir . '/', $profM[1]);
+        if (!is_dir($profileOnHost)) mkdir($profileOnHost, 0755, true);
     }
 
     jsonResponse($newServer, 201);
@@ -139,13 +128,15 @@ if ($method === 'DELETE' && $id > 0) {
     $s = $db->getServer($id);
     if (!$s) jsonError('Not found', 404);
     if (in_array($s['status'], ['running', 'installing'])) jsonError('Stop the server before deleting it');
+    // Remove the game server container and install container if they exist
+    try {
+        $d = docker();
+        foreach ([containerName($id), 'gsm-install-' . $id] as $cname) {
+            $info = $d->inspectContainer($cname);
+            if ($info !== null) $d->removeContainer($cname, true);
+        }
+    } catch (RuntimeException) {}
     $db->deleteServer($id);
-    // Delete game files from disk if the install directory exists
-    $installDir = $s['install_dir'] ?? '';
-    if ($installDir && is_dir($installDir)) {
-        shell_exec('rm -rf ' . escapeshellarg($installDir));
-    }
-    // Remove logs for this server
     @unlink(DATA_DIR . '/logs/server-' . $id . '.log');
     @unlink(DATA_DIR . '/logs/install-' . $id . '.log');
     jsonResponse(['ok' => true]);
@@ -162,49 +153,58 @@ if ($method === 'POST' && $id > 0 && $action !== '') {
         case 'start':
             if ($s['status'] === 'running') jsonError('Server is already running');
             try {
-                $pid = startServer($s);
-                $db->updateServer($id, ['status' => 'running', 'pid' => $pid]);
-                jsonResponse(['ok' => true, 'pid' => $pid]);
+                $containerId = startServer($s);
+                $db->updateServer($id, ['status' => 'running', 'container_id' => $containerId]);
+                jsonResponse(['ok' => true, 'container_id' => $containerId]);
             } catch (RuntimeException $e) {
                 jsonError($e->getMessage());
             }
 
         case 'stop':
             if ($s['status'] !== 'running') jsonError('Server is not running');
-            if ($s['pid']) killProcess((int)$s['pid']);
-            $db->updateServer($id, ['status' => 'stopped', 'pid' => null]);
+            stopContainer($s['container_id'] ?? '');
+            $db->updateServer($id, ['status' => 'stopped', 'container_id' => '']);
             jsonResponse(['ok' => true]);
 
         case 'install':
             if ($s['status'] === 'running')    jsonError('Stop the server before installing');
             if ($s['status'] === 'installing') jsonError('Installation already in progress');
-            $steamcmd  = $db->getSetting('steamcmd_path') ?: '/opt/steamcmd/steamcmd.sh';
             $steamUser = $db->getSetting('steam_username') ?: '';
             $steamPass = $db->getSetting('steam_password') ?: '';
             try {
-                $pid = installServer($s, $steamcmd, $steamUser, $steamPass);
-                $db->updateServer($id, ['status' => 'installing', 'pid' => $pid]);
-                jsonResponse(['ok' => true, 'pid' => $pid]);
+                $containerId = installServer($s, $steamUser, $steamPass);
+                $db->updateServer($id, ['status' => 'installing', 'container_id' => $containerId]);
+                jsonResponse(['ok' => true, 'container_id' => $containerId]);
             } catch (RuntimeException $e) {
                 jsonError($e->getMessage());
             }
 
         case 'cancel-install':
             if ($s['status'] !== 'installing') jsonError('No active installation');
-            if ($s['pid']) killProcess((int)$s['pid']);
-            $db->updateServer($id, ['status' => 'stopped', 'pid' => null]);
+            stopContainer($s['container_id'] ?? '');
+            $db->updateServer($id, ['status' => 'stopped', 'container_id' => '']);
             jsonResponse(['ok' => true]);
 
         case 'restart':
-            if ($s['pid']) killProcess((int)$s['pid']);
-            sleep(1);
+            stopContainer($s['container_id'] ?? '');
             try {
-                $pid = startServer($s);
-                $db->updateServer($id, ['status' => 'running', 'pid' => $pid]);
-                jsonResponse(['ok' => true, 'pid' => $pid]);
+                $containerId = startServer($s);
+                $db->updateServer($id, ['status' => 'running', 'container_id' => $containerId]);
+                jsonResponse(['ok' => true, 'container_id' => $containerId]);
             } catch (RuntimeException $e) {
-                $db->updateServer($id, ['status' => 'stopped', 'pid' => null]);
+                $db->updateServer($id, ['status' => 'stopped', 'container_id' => '']);
                 jsonError($e->getMessage());
+            }
+
+        case 'stats':
+            if ($s['status'] !== 'running' || empty($s['container_id'])) {
+                jsonResponse(['cpu_pct' => 0, 'mem_mb' => 0, 'mem_limit_mb' => 0]);
+            }
+            try {
+                $stats = docker()->getStats($s['container_id']);
+                jsonResponse(docker()->calcStats($stats));
+            } catch (RuntimeException $e) {
+                jsonResponse(['cpu_pct' => 0, 'mem_mb' => 0, 'mem_limit_mb' => 0]);
             }
 
         default:

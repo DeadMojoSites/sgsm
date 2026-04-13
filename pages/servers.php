@@ -118,6 +118,16 @@
             <input class="form-control" type="number" id="sf-maxp" placeholder="16" min="0">
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">CPU Limit (cores, 0 = unlimited)</label>
+            <input class="form-control" type="number" id="sf-cpu" placeholder="0" min="0" step="0.5">
+          </div>
+          <div class="form-group">
+            <label class="form-label">RAM Limit MB (0 = unlimited)</label>
+            <input class="form-control" type="number" id="sf-ram" placeholder="0" min="0" step="256">
+          </div>
+        </div>
         <div class="form-group">
           <label class="form-label">Notes</label>
           <textarea class="form-control" id="sf-notes" rows="2" placeholder="Optional notes…"></textarea>

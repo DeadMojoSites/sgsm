@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/docker.php';
+
 function isLoggedIn(): bool {
     return !empty($_SESSION['gsm_user']);
 }
@@ -31,212 +33,249 @@ function getBody(): array {
     return $body;
 }
 
-function isProcessRunning(int $pid): bool {
-    if ($pid <= 0) return false;
-    if (PHP_OS_FAMILY === 'Windows') {
-        $out = shell_exec("tasklist /FI \"PID eq $pid\" 2>NUL");
-        return str_contains((string)$out, (string)$pid);
-    }
-    return file_exists("/proc/$pid");
+// ── Docker helpers ────────────────────────────────────────────────────────────
+
+/** Canonical container name for a server ID. */
+function containerName(int $id): string {
+    return 'gsm-server-' . $id;
 }
 
-function killProcess(int $pid): void {
-    if ($pid <= 0) return;
-    if (PHP_OS_FAMILY === 'Windows') {
-        shell_exec("taskkill /PID $pid /F 2>NUL");
+/** Return a shared DockerClient instance (lazy init). */
+function docker(): DockerClient {
+    static $client = null;
+    if ($client === null) $client = new DockerClient();
+    return $client;
+}
+
+/**
+ * Check whether a server container is still running.
+ * Replaces isProcessRunning().
+ */
+function isContainerRunning(string $containerId): bool {
+    if (!$containerId) return false;
+    try {
+        return docker()->isRunning($containerId);
+    } catch (RuntimeException) {
+        return false;
+    }
+}
+
+/**
+ * Stop and remove a server container.
+ * Replaces killProcess().
+ */
+function stopContainer(string $containerId, int $timeout = 10): void {
+    if (!$containerId) return;
+    try {
+        $d = docker();
+        $d->stopContainer($containerId, $timeout);
+        $d->removeContainer($containerId);
+    } catch (RuntimeException) {
+        // Best-effort — container may already be gone
+    }
+}
+
+// ── Arma Reforger config helpers ──────────────────────────────────────────────
+
+/**
+ * Convert a path inside the panel container to the corresponding host path.
+ * Docker daemon mounts from the host — not from inside the panel container.
+ *
+ * docker-compose.yml mounts  ./gsm_servers → /opt/servers  in the panel, and
+ * sets GSM_SERVERS_HOST_PATH to the absolute host path of ./gsm_servers so that
+ * game containers can be given the correct bind-mount source.
+ */
+function hostPath(string $containerPath): string {
+    static $base = null;
+    if ($base === null) {
+        $base = rtrim((string)(getenv('GSM_SERVERS_HOST_PATH') ?: ''), '/');
+    }
+    if ($base && str_starts_with($containerPath, '/opt/servers/')) {
+        return $base . '/' . substr($containerPath, strlen('/opt/servers/'));
+    }
+    // Fallback: path as-is (direct host install, dev environment)
+    return $containerPath;
+}
+
+
+/**
+ * Ensure config.json exists for Arma Reforger and strip forbidden DS 1.6+ fields.
+ * $cfgFile is the ABSOLUTE path on the host.
+ */
+function ensureArmaConfig(string $cfgFile, array $server): void {
+    if (!file_exists($cfgFile)) {
+        $dir = dirname($cfgFile);
+        if (!is_dir($dir)) mkdir($dir, 0755, true);
+        file_put_contents($cfgFile, json_encode([
+            'dedicatedServerId'   => '',
+            'region'              => 'EU',
+            'gameHostBindPort'    => (int)($server['port'] ?? 2001),
+            'gameHostRegisterPort'=> (int)($server['port'] ?? 2001),
+            'adminPassword'       => 'changeme',
+            'game' => [
+                'name'                     => $server['name'],
+                'password'                 => '',
+                'scenarioId'               => '{ECC61978EDCC2B5A}Missions/23_Campaign.conf',
+                'maxPlayers'               => (int)($server['max_players'] ?? 32),
+                'visible'                  => true,
+                'supportedGameClientTypes' => ['PLATFORM_PC'],
+            ],
+        ], JSON_PRETTY_PRINT) . "\n");
     } else {
-        shell_exec("kill -15 $pid 2>/dev/null");
-        usleep(500000);
-        if (isProcessRunning($pid)) shell_exec("kill -9 $pid 2>/dev/null");
+        // Auto-fix: remove fields disallowed in DS 1.6+
+        $data = json_decode(file_get_contents($cfgFile), true);
+        if (is_array($data)) {
+            $changed = false;
+            foreach (['gameHostBindAddress', 'gameHostRegisterBindAddress'] as $banned) {
+                if (array_key_exists($banned, $data)) { unset($data[$banned]); $changed = true; }
+            }
+            if ($changed) file_put_contents($cfgFile, json_encode($data, JSON_PRETTY_PRINT) . "\n");
+        }
     }
 }
 
-function startServer(array $server): int {
+// ── Server container management ───────────────────────────────────────────────
+
+/**
+ * Launch the game server in its own Docker container.
+ * Returns the full container ID.
+ */
+function startServer(array $server): string {
     $id         = (int)$server['id'];
-    $installDir = $server['install_dir'];
+    $installDir = rtrim($server['install_dir'], '/');
     $executable = $server['launch_executable'] ?? '';
     $launchArgs = $server['launch_args'] ?? '';
 
     if (!$executable) throw new RuntimeException('No launch executable configured. Edit the server to set one.');
-    if (!is_dir($installDir) && !mkdir($installDir, 0755, true)) {
-        throw new RuntimeException("Install directory does not exist and could not be created: \"$installDir\".");
-    }
 
-    // Replace {INSTALL_DIR} placeholder in launch args with the real path
-    $launchArgs = str_replace('{INSTALL_DIR}', rtrim($installDir, '/'), $launchArgs);
+    $d = docker();
+    $d->assertAvailable();
 
-    // Auto-create config.json if the args reference one that doesn't exist yet
+    // Make install dir on host if it doesn't exist
+    if (!is_dir($installDir)) mkdir($installDir, 0755, true);
+
+    // Inside the container the game files are always at /server
+    $launchArgs = str_replace('{INSTALL_DIR}', '/server', $launchArgs);
+
+    // Handle Arma Reforger config (maps to host path for file-editor access)
     if (preg_match('/-config\s+(\S+)/', $launchArgs, $m)) {
-        $cfgFile = $m[1];
-        if (!file_exists($cfgFile)) {
-            $dir = dirname($cfgFile);
-            if (!is_dir($dir)) mkdir($dir, 0755, true);
-            file_put_contents($cfgFile, json_encode([
-                'dedicatedServerId' => '',
-                'region'            => 'EU',
-                'gameHostBindPort'  => (int)($server['port'] ?? 2001),
-                'gameHostRegisterPort' => (int)($server['port'] ?? 2001),
-                'adminPassword'     => 'changeme',
-                'game' => [
-                    'name'                     => $server['name'],
-                    'password'                 => '',
-                    'scenarioId'               => '{ECC61978EDCC2B5A}Missions/23_Campaign.conf',
-                    'maxPlayers'               => (int)($server['max_players'] ?? 32),
-                    'visible'                  => true,
-                    'supportedGameClientTypes' => ['PLATFORM_PC'],
-                ],
-            ], JSON_PRETTY_PRINT) . "\n");
-        } else {
-            // Auto-fix existing Arma Reforger configs — remove fields no longer allowed in DS 1.6+
-            $cfgData = json_decode(file_get_contents($cfgFile), true);
-            if (is_array($cfgData)) {
-                $removed = false;
-                foreach (['gameHostBindAddress', 'gameHostRegisterBindAddress'] as $banned) {
-                    if (array_key_exists($banned, $cfgData)) {
-                        unset($cfgData[$banned]);
-                        $removed = true;
-                    }
-                }
-                if ($removed) {
-                    file_put_contents($cfgFile, json_encode($cfgData, JSON_PRETTY_PRINT) . "\n");
-                }
-            }
-        }
+        // Translate container path /server/... → host path
+        $cfgInContainer = $m[1];
+        $cfgOnHost = str_replace('/server/', $installDir . '/', $cfgInContainer);
+        ensureArmaConfig($cfgOnHost, $server);
     }
 
-    // Auto-create profile directory if referenced in args
-    if (preg_match('/-profile\s+(\S+)/', $launchArgs, $m) && !is_dir($m[1])) {
-        mkdir($m[1], 0755, true);
+    // Auto-create profile dir
+    if (preg_match('/-profile\s+(\S+)/', $launchArgs, $m)) {
+        $profileInContainer = $m[1];
+        $profileOnHost = str_replace('/server/', $installDir . '/', $profileInContainer);
+        if (!is_dir($profileOnHost)) mkdir($profileOnHost, 0755, true);
     }
 
-    // Resolve the executable path
-    $execPath = str_starts_with($executable, '/') ? $executable
-        : rtrim($installDir, '/') . '/' . ltrim(preg_replace('#^\./#', '', $executable), '/');
+    $isWindows = strtolower(pathinfo($executable, PATHINFO_EXTENSION)) === 'exe';
+    $image     = $isWindows ? 'ghcr.io/deadmojosites/sgsm-wine:latest' : 'steamcmd/steamcmd:latest';
 
-    if (!file_exists($execPath)) {
-        // Scan the install dir for executables to help the admin find the correct path
-        $found = [];
-        if (is_dir($installDir)) {
-            $rit = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($installDir, FilesystemIterator::SKIP_DOTS),
-                RecursiveIteratorIterator::SELF_FIRST
-            );
-            foreach ($rit as $file) {
-                if (!$file->isFile()) continue;
-                $name = $file->getFilename();
-                $ext  = strtolower($file->getExtension());
-                if ($ext === 'sh' || $ext === '' || is_executable($file->getPathname())) {
-                    // Make path relative to install dir
-                    $rel = './' . ltrim(str_replace($installDir, '', $file->getPathname()), '/');
-                    $found[] = $rel;
-                    if (count($found) >= 20) break;
-                }
-            }
-        }
-        $hint = empty($found)
-            ? 'No files found in install directory — try reinstalling.'
-            : 'Found these executables: ' . implode(', ', $found) . ' — edit the server and update the Launch Executable field.';
-        throw new RuntimeException("Executable not found: \"$executable\". $hint");
-    }
-    if (!is_executable($execPath)) {
-        chmod($execPath, 0755);
+    // Build sh -c command string (handles args with embedded spaces safely)
+    $execInContainer = preg_replace('#^\./#', '/server/', $executable);
+    // chmod the binary inside the container via entrypoint trick
+    $shCmd = "chmod +x " . escapeshellarg($execInContainer) . " 2>/dev/null; "
+           . ($isWindows ? "wine " : "")
+           . $execInContainer . " " . $launchArgs;
+
+    $cname = containerName($id);
+
+    // Remove stale stopped container if present
+    $existing = $d->inspectContainer($cname);
+    if ($existing !== null && !($existing['State']['Running'] ?? false)) {
+        $d->removeContainer($cname, true);
     }
 
-    $logFile = DATA_DIR . '/logs/server-' . $id . '.log';
-    if (!is_dir(dirname($logFile))) mkdir(dirname($logFile), 0755, true);
-    file_put_contents($logFile, '[' . date('Y-m-d H:i:s') . "] --- Server starting ---\n");
+    // Bind mount uses the HOST path (Docker daemon runs on host, not inside panel container)
+    $hostInstallDir = hostPath($installDir);
 
-    // Use wine for Windows executables (.exe) if running on Linux
-    $useWine = strtolower(pathinfo($execPath, PATHINFO_EXTENSION)) === 'exe';
-    if ($useWine) {
-        $winePath = trim(shell_exec('which wine 2>/dev/null') ?? '');
-        if (!$winePath) throw new RuntimeException(
-            "This server requires Wine to run on Linux (Windows-only executable). " .
-            "Install Wine in the container: apt-get install -y wine"
-        );
+    // Resource limits
+    $hostConfig = [
+        'Binds'         => [$hostInstallDir . ':/server'],
+        'NetworkMode'   => 'host',
+        'RestartPolicy' => ['Name' => 'no'],
+    ];
+    if (!empty($server['cpu_limit']) && (float)$server['cpu_limit'] > 0) {
+        $hostConfig['NanoCpus'] = (int)((float)$server['cpu_limit'] * 1e9);
+    }
+    if (!empty($server['ram_limit_mb']) && (int)$server['ram_limit_mb'] > 0) {
+        $hostConfig['Memory'] = (int)$server['ram_limit_mb'] * 1048576;
     }
 
-    $cmd = sprintf(
-        'cd %s && nohup %s%s %s >> %s 2>&1 & echo $!',
-        escapeshellarg($installDir),
-        $useWine ? 'wine ' : '',
-        escapeshellarg($execPath),
-        $launchArgs,
-        escapeshellarg($logFile)
-    );
-    $pid = (int)shell_exec($cmd);
-    if ($pid <= 0) throw new RuntimeException('Failed to start server process. Check server logs.');
-    return $pid;
+    $containerId = $d->createContainer($cname, [
+        'Image'      => $image,
+        'Entrypoint' => ['/bin/sh', '-c'],
+        'Cmd'        => [$shCmd],
+        'WorkingDir' => '/server',
+        'HostConfig' => $hostConfig,
+        'Labels'     => ['gsm.server_id' => (string)$id],
+    ]);
+
+    $d->startContainer($containerId);
+    return $containerId;
 }
 
-function autoInstallSteamCmd(string $steamcmdPath): void {
-    $steamcmdDir = dirname($steamcmdPath);
-    if (!is_dir($steamcmdDir) && !mkdir($steamcmdDir, 0755, true)) {
-        throw new RuntimeException("Cannot create SteamCMD directory: \"$steamcmdDir\". Check permissions.");
-    }
-
-    // Download the SteamCMD tarball
-    $tarball = $steamcmdDir . '/steamcmd_linux.tar.gz';
-    $result  = shell_exec('curl -fsSL -o ' . escapeshellarg($tarball) . ' "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" 2>&1');
-    if (!file_exists($tarball)) {
-        throw new RuntimeException('Failed to download SteamCMD. Ensure the container has internet access.');
-    }
-
-    shell_exec('tar -xzf ' . escapeshellarg($tarball) . ' -C ' . escapeshellarg($steamcmdDir) . ' 2>&1');
-    @unlink($tarball);
-
-    if (!file_exists($steamcmdPath)) {
-        throw new RuntimeException('SteamCMD extraction failed. Could not find steamcmd.sh after download.');
-    }
-    chmod($steamcmdPath, 0755);
-
-    // First-run bootstrap so SteamCMD updates itself
-    shell_exec($steamcmdPath . ' +quit 2>&1');
-}
-
-function installServer(array $server, string $steamcmdPath, string $steamUser = '', string $steamPass = ''): int {
+/**
+ * Run a SteamCMD install/update inside a dedicated container.
+ * Returns the container ID (the container exits when the install completes).
+ */
+function installServer(array $server, string $steamUser = '', string $steamPass = ''): string {
     $id         = (int)$server['id'];
-    $installDir = $server['install_dir'];
+    $installDir = rtrim($server['install_dir'], '/');
     $appId      = (int)$server['app_id'];
+
+    $d = docker();
+    $d->assertAvailable();
 
     if (!is_dir($installDir)) mkdir($installDir, 0755, true);
 
-    // Auto-download SteamCMD if it is not present yet
-    if (!file_exists($steamcmdPath)) {
-        autoInstallSteamCmd($steamcmdPath);
-    }
-
-    $logFile = DATA_DIR . '/logs/install-' . $id . '.log';
-    if (!is_dir(dirname($logFile))) mkdir(dirname($logFile), 0755, true);
+    // Remove any previous install container
+    $cname = 'gsm-install-' . $id;
+    $existing = $d->inspectContainer($cname);
+    if ($existing !== null) $d->removeContainer($cname, true);
 
     $useLogin = !empty($steamUser) && !empty($steamPass);
-    $loginStr = $useLogin
+    $loginCmd = $useLogin
         ? '+login ' . escapeshellarg($steamUser) . ' ' . escapeshellarg($steamPass)
         : '+login anonymous';
 
-    if (!$useLogin) {
-        $note = "NOTE: If install fails with 'Missing configuration' or 'No subscription',\n"
-              . "      this game requires a Steam account login and cannot be installed anonymously.\n"
-              . "      Go to Settings → Steam and enter your Steam credentials.\n\n";
-    } else {
-        $note = "NOTE: Installing with Steam account: $steamUser\n"
-              . "      If prompted for a Steam Guard code, anonymous re-login is not possible.\n"
-              . "      Use a dedicated Steam account with Mobile Authenticator for automated installs.\n\n";
-    }
+    $note = $useLogin
+        ? "NOTE: Installing App ID $appId as Steam user: $steamUser\n\n"
+        : "NOTE: Installing App ID $appId anonymously.\n"
+        . "      If this fails with 'Missing configuration' / 'No subscription',\n"
+        . "      the game requires a Steam account. Go to Settings → Steam to add credentials.\n\n";
+
+    // Write header to log file immediately so the console shows something
+    $logFile = DATA_DIR . '/logs/install-' . $id . '.log';
+    if (!is_dir(dirname($logFile))) mkdir(dirname($logFile), 0755, true);
     file_put_contents($logFile, '[' . date('Y-m-d H:i:s') . "] --- Installing App ID $appId ---\n" . $note);
 
-    $steamHome = dirname($steamcmdPath);
-    // Set HOME to the steamcmd dir so SteamCMD can write its cache there
-    $cmd = sprintf(
-        'HOME=%s nohup %s +force_install_dir %s %s +app_update %d validate +quit >> %s 2>&1 & echo $!',
-        escapeshellarg($steamHome),
-        escapeshellarg($steamcmdPath),
-        escapeshellarg($installDir),
-        $loginStr,
-        $appId,
-        escapeshellarg($logFile)
-    );
-    $pid = (int)shell_exec($cmd);
-    if ($pid <= 0) throw new RuntimeException('Failed to start SteamCMD. Check SteamCMD path in Settings.');
-    return $pid;
+    // SteamCMD command inside the container
+    $shCmd = "/home/steam/steamcmd/steamcmd.sh"
+           . " +force_install_dir /server"
+           . " $loginCmd"
+           . " +app_update $appId validate"
+           . " +quit";
+
+    // Bind mount uses the HOST path (Docker daemon runs on host)
+    $hostInstallDir = hostPath($installDir);
+
+    $containerId = $d->createContainer($cname, [
+        'Image'      => 'steamcmd/steamcmd:latest',
+        'Entrypoint' => ['/bin/sh', '-c'],
+        'Cmd'        => [$shCmd],
+        'WorkingDir' => '/server',
+        'HostConfig' => [
+            'Binds'       => [$hostInstallDir . ':/server'],
+            'NetworkMode' => 'bridge', // needs internet for download
+        ],
+        'Labels' => ['gsm.install_id' => (string)$id],
+    ]);
+
+    $d->startContainer($containerId);
+    return $containerId;
 }

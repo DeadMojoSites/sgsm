@@ -1,4 +1,4 @@
-# --- PHP + Apache + SteamCMD --------------------------------------------------
+# --- PHP + Apache ------------------------------------------------------------
 FROM php:8.2-apache
 
 LABEL maintainer="Game Server Manager"
@@ -6,24 +6,16 @@ LABEL description="Steam Game Server Manager - PHP Edition"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System dependencies
-RUN dpkg --add-architecture i386 && \
-    apt-get update && \
+# System dependencies (no wine/wine32 — game servers run in their own containers)
+RUN apt-get update && \
     apt-get install -y \
         ca-certificates \
         wget \
         curl \
-        lib32gcc-s1 \
-        git \
         libsqlite3-dev \
         libcurl4-openssl-dev \
-        wine \
-        wine32 \
     && docker-php-ext-install pdo pdo_sqlite curl \
     && rm -rf /var/lib/apt/lists/*
-
-# SteamCMD directory — binary is downloaded on first install via helpers.php
-RUN mkdir -p /opt/steamcmd
 
 # Apache
 RUN a2enmod rewrite

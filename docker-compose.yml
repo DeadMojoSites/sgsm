@@ -2,13 +2,16 @@ services:
   game-server-manager:
     image: ghcr.io/deadmojosites/sgsm:latest
     container_name: game-server-manager
-    network_mode: host          # Game servers bind ports directly — no per-port mapping needed
+    ports:
+      - "8080:8080"                    # Web UI
     volumes:
-      - ./gsm_data:/app/data        # SQLite DB, uploads, config
-      - ./gsm_steamcmd:/opt/steamcmd  # SteamCMD binaries & cache
-      - ./gsm_servers:/opt/servers  # Installed game servers
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket — panel manages game containers
+      - ./gsm_data:/app/data            # SQLite DB, logs, uploads
+      - ./gsm_servers:/opt/servers      # Game server files (shared with game containers)
     environment:
       - DATA_DIR=/app/data
+      - DOCKER_SOCKET=/var/run/docker.sock
+      - GSM_SERVERS_HOST_PATH=${PWD}/gsm_servers   # Absolute host path passed to game containers
     restart: unless-stopped
 
   # ── Optional: local MySQL (uncomment to use) ──────────────────────────────

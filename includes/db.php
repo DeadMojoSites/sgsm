@@ -34,6 +34,9 @@ class GSM_DB {
                 max_players       INTEGER NOT NULL DEFAULT 0,
                 notes             TEXT    NOT NULL DEFAULT '',
                 pid               INTEGER,
+                container_id      TEXT    NOT NULL DEFAULT '',
+                cpu_limit         REAL    NOT NULL DEFAULT 0,
+                ram_limit_mb      INTEGER NOT NULL DEFAULT 0,
                 created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
             );
@@ -51,6 +54,14 @@ class GSM_DB {
                 FOREIGN KEY(server_id) REFERENCES servers(id) ON DELETE CASCADE
             );
         ");
+        // Migrations for existing installs — add columns if missing
+        foreach (['container_id TEXT NOT NULL DEFAULT ""',
+                  'cpu_limit REAL NOT NULL DEFAULT 0',
+                  'ram_limit_mb INTEGER NOT NULL DEFAULT 0'] as $col) {
+            [$colName] = explode(' ', $col);
+            try { $this->pdo->exec("ALTER TABLE servers ADD COLUMN $col"); } catch (\PDOException) {}
+        }
+
         $defaults = [
             'app_name'              => 'Game Server Manager',
             'setup_complete'        => '',
@@ -102,20 +113,23 @@ class GSM_DB {
 
     public function createServer(array $d): array {
         $this->pdo->prepare("
-            INSERT INTO servers (name,app_id,install_dir,launch_executable,launch_args,port,max_players,notes)
-            VALUES (?,?,?,?,?,?,?,?)
+            INSERT INTO servers (name,app_id,install_dir,launch_executable,launch_args,port,max_players,notes,cpu_limit,ram_limit_mb)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
         ")->execute([
             $d['name'], $d['app_id'], $d['install_dir'],
             $d['launch_executable'] ?? '', $d['launch_args'] ?? '',
             isset($d['port']) && $d['port'] !== '' ? (int)$d['port'] : null,
             (int)($d['max_players'] ?? 0),
-            $d['notes'] ?? ''
+            $d['notes'] ?? '',
+            (float)($d['cpu_limit'] ?? 0),
+            (int)($d['ram_limit_mb'] ?? 0),
         ]);
         return $this->getServer((int)$this->pdo->lastInsertId());
     }
 
     public function updateServer(int $id, array $d): ?array {
-        $allowed = ['name','app_id','install_dir','launch_executable','launch_args','port','max_players','notes','status','pid'];
+        $allowed = ['name','app_id','install_dir','launch_executable','launch_args','port','max_players',
+                    'notes','status','pid','container_id','cpu_limit','ram_limit_mb'];
         $sets = []; $vals = [];
         foreach ($allowed as $f) {
             if (array_key_exists($f, $d)) { $sets[] = "$f=?"; $vals[] = $d[$f]; }

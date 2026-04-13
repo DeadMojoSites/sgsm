@@ -213,6 +213,8 @@ function applyTemplate(t) {
   setValue('sf-args',  launchArgs);
   setValue('sf-port',  t.port  || '');
   setValue('sf-maxp',  t.max_players || '');
+  setValue('sf-cpu',   '');
+  setValue('sf-ram',   '');
 
   // Show warning if this game requires a Steam account login
   let warn = document.getElementById('tpl-login-warning');
@@ -361,6 +363,8 @@ function openServerModal(server) {
   setValue('sf-args',  server?.launch_args || '');
   setValue('sf-port',  server?.port  || '');
   setValue('sf-maxp',  server?.max_players || '');
+  setValue('sf-cpu',   server?.cpu_limit   || '');
+  setValue('sf-ram',   server?.ram_limit_mb || '');
   setValue('sf-notes', server?.notes || '');
   if (!isEdit) {
     const tl = document.getElementById('templates-list');
@@ -390,6 +394,8 @@ async function submitServerForm(e) {
     launch_args:       document.getElementById('sf-args').value.trim(),
     port:              document.getElementById('sf-port').value || null,
     max_players:       document.getElementById('sf-maxp').value || 0,
+    cpu_limit:         parseFloat(document.getElementById('sf-cpu').value) || 0,
+    ram_limit_mb:      parseInt(document.getElementById('sf-ram').value)   || 0,
     notes:             document.getElementById('sf-notes').value.trim(),
   };
   try {
