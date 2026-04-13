@@ -3,7 +3,7 @@ services:
     image: ghcr.io/deadmojosites/sgsm:latest
     container_name: game-server-manager
     ports:
-      - "8080:8080"                    # Web UI
+      - "8880:8080"                    # Web UI
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket — panel manages game containers
       - ./gsm_data:/app/data            # SQLite DB, logs, uploads
