@@ -18,13 +18,8 @@ RUN dpkg --add-architecture i386 && \
     && docker-php-ext-install pdo pdo_sqlite \
     && rm -rf /var/lib/apt/lists/*
 
-# SteamCMD
-RUN mkdir -p /opt/steamcmd && \
-    cd /opt/steamcmd && \
-    wget -q https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz && \
-    tar xf steamcmd_linux.tar.gz && \
-    rm steamcmd_linux.tar.gz && \
-    chmod +x /opt/steamcmd/steamcmd.sh
+# SteamCMD directory — binary is downloaded on first install via helpers.php
+RUN mkdir -p /opt/steamcmd
 
 # Apache
 RUN a2enmod rewrite
