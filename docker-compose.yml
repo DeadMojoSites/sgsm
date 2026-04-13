@@ -7,7 +7,7 @@ services:
     volumes:
       - gsm_data:/app/data          # SQLite DB, uploads, config
       - gsm_steamcmd:/opt/steamcmd  # SteamCMD binaries & cache
-      - gsm_servers:/opt/servers    # Installed game servers
+      - ./gsm_servers:/opt/servers  # Installed game servers (bind mount — visible on host)
     environment:
       - DATA_DIR=/app/data
     restart: unless-stopped
@@ -42,6 +42,5 @@ services:
 volumes:
   gsm_data:
   gsm_steamcmd:
-  gsm_servers:
   # gsm_mysql:
   # gsm_postgres:
