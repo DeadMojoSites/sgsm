@@ -329,6 +329,9 @@ function installServer(array $server, string $steamUser = '', string $steamPass 
     // Bind mount uses the HOST path (Docker daemon runs on host)
     $hostInstallDir = hostPath($installDir);
 
+    // Pull image if not present (first run or image was removed)
+    try { $d->pullImage('steamcmd/steamcmd:latest'); } catch (RuntimeException) {}
+
     $containerId = $d->createContainer($cname, [
         'Image'      => 'steamcmd/steamcmd:latest',
         'Entrypoint' => ['/bin/sh', '-c'],
