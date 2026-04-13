@@ -82,16 +82,25 @@ if ($action === 'test-db' && $method === 'POST') {
 
 // ── POST run update ───────────────────────────────────────────────────────────
 if ($action === 'update' && $method === 'POST') {
-    $repoUrl = $db->getSetting('update_repo_url');
-    $root    = dirname(__DIR__);
-    $log     = DATA_DIR . '/logs/update.log';
+    $log = DATA_DIR . '/logs/update.log';
     if (!is_dir(dirname($log))) mkdir(dirname($log), 0755, true);
 
-    $cmd = $repoUrl
-        ? "cd " . escapeshellarg($root) . " && git remote set-url origin " . escapeshellarg($repoUrl) . " && git pull origin main >> " . escapeshellarg($log) . " 2>&1 & echo $!"
-        : "cd " . escapeshellarg($root) . " && git pull origin main >> " . escapeshellarg($log) . " 2>&1 & echo $!";
-    file_put_contents($log, '[' . date('Y-m-d H:i:s') . "] --- Update started ---\n");
-    shell_exec($cmd);
+    $image = 'ghcr.io/mbrown22073/sgsm:latest';
+    $msg   = implode("\n", [
+        '[' . date('Y-m-d H:i:s') . '] --- Update check started ---',
+        'This application runs inside a Docker container.',
+        'To update to the latest version:',
+        '',
+        '  1. On your Synology, open Container Manager',
+        '  2. Stop and remove this container',
+        '  3. Run: docker pull ' . $image,
+        '  4. Recreate the container from your docker-compose.yml',
+        '',
+        'Your data (servers, settings, logs) is stored in Docker volumes',
+        'and will be preserved across updates.',
+        '[' . date('Y-m-d H:i:s') . '] --- Done ---',
+    ]);
+    file_put_contents($log, $msg . "\n");
     jsonResponse(['ok' => true]);
 }
 
