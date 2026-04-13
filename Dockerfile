@@ -15,6 +15,7 @@ RUN dpkg --add-architecture i386 && \
         curl \
         lib32gcc-s1 \
         git \
+        libsqlite3-dev \
     && docker-php-ext-install pdo pdo_sqlite \
     && rm -rf /var/lib/apt/lists/*
 
