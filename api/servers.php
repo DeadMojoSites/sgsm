@@ -32,6 +32,15 @@ function syncStatus(array &$s): void {
     }
 }
 
+// ── GET mojos (for server create dropdown) ───────────────────────────────────
+if (isset($_GET['mojos'])) {
+    $mojos = $db->getMojos();
+    foreach ($mojos as &$m) {
+        $m['variables'] = $db->getMojoVariables((int)$m['id']);
+    }
+    jsonResponse($mojos);
+}
+
 // ── GET list / single ────────────────────────────────────────────────────────
 if ($method === 'GET' && $id === 0 && $action === '') {
     $servers = $db->getServers();
