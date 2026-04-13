@@ -140,7 +140,7 @@ if ($method === 'POST' && $id > 0 && $action !== '') {
             if ($s['status'] === 'running')    jsonError('Stop the server before installing');
             if ($s['status'] === 'installing') jsonError('Installation already in progress');
             $steamUser = $db->getSetting('steam_username') ?: '';
-            $steamPass = $db->getSetting('steam_password') ?: '';
+            $steamPass = decryptValue($db->getSetting('steam_password') ?: '');
             try {
                 $containerId = installServer($s, $steamUser, $steamPass);
                 $db->updateServer($id, ['status' => 'installing', 'container_id' => $containerId]);
