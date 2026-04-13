@@ -11,7 +11,7 @@ services:
     environment:
       - DATA_DIR=/app/data
       - DOCKER_SOCKET=/var/run/docker.sock
-      - GSM_SERVERS_HOST_PATH=${PWD}/gsm_servers   # Absolute host path passed to game containers
+      - GSM_SERVERS_HOST_PATH=${GSM_SERVERS_HOST_PATH:-/opt/servers}  # Set in .env: GSM_SERVERS_HOST_PATH=/volume1/docker/SGSM/gsm_servers
       - APP_KEY=${APP_KEY:-changeme-please-set-a-32-char-secret}  # Used to encrypt steam passwords
     restart: unless-stopped
 
