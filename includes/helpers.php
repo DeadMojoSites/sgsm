@@ -320,7 +320,8 @@ function installServer(array $server, string $steamUser = '', string $steamPass 
     file_put_contents($logFile, '[' . date('Y-m-d H:i:s') . "] --- Installing App ID $appId ---\n" . $note);
 
     // SteamCMD command inside the container
-    $shCmd = "/home/steam/steamcmd/steamcmd.sh"
+    // Use 'steamcmd' from PATH rather than hard-coded path (portable across image versions)
+    $shCmd = "steamcmd"
            . " +force_install_dir /server"
            . " $loginCmd"
            . " +app_update $appId validate"
