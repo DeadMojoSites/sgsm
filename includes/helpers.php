@@ -278,7 +278,6 @@ function startServer(array $server): string {
         'WorkingDir' => '/server',
         'HostConfig' => $hostConfig,
         'Labels'     => ['gsm.server_id' => (string)$id],
-        'Platform'   => 'linux/amd64',
     ]);
 
     $d->startContainer($containerId);
@@ -342,8 +341,7 @@ function installServer(array $server, string $steamUser = '', string $steamPass 
             'Binds'       => [$hostInstallDir . ':/server'],
             'NetworkMode' => 'bridge', // needs internet for download
         ],
-        'Labels'   => ['gsm.install_id' => (string)$id],
-        'Platform' => 'linux/amd64',
+        'Labels' => ['gsm.install_id' => (string)$id],
     ]);
 
     $d->startContainer($containerId);
