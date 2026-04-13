@@ -37,6 +37,19 @@ class GSM_DB {
                 created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS mods (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_id   INTEGER NOT NULL,
+                mod_id      TEXT    NOT NULL,
+                name        TEXT    NOT NULL DEFAULT '',
+                description TEXT    NOT NULL DEFAULT '',
+                preview_url TEXT    NOT NULL DEFAULT '',
+                source      TEXT    NOT NULL DEFAULT 'steam',
+                status      TEXT    NOT NULL DEFAULT 'pending',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(server_id, mod_id),
+                FOREIGN KEY(server_id) REFERENCES servers(id) ON DELETE CASCADE
+            );
         ");
         $defaults = [
             'app_name'              => 'Game Server Manager',
@@ -117,5 +130,45 @@ class GSM_DB {
 
     public function deleteServer(int $id): void {
         $this->pdo->prepare("DELETE FROM servers WHERE id=?")->execute([$id]);
+    }
+
+    // ── Mods ──────────────────────────────────────────────────────────────────
+    public function getMods(int $serverId): array {
+        $stmt = $this->pdo->prepare("SELECT * FROM mods WHERE server_id=? ORDER BY name");
+        $stmt->execute([$serverId]);
+        return $stmt->fetchAll();
+    }
+
+    public function getMod(int $id): ?array {
+        $stmt = $this->pdo->prepare("SELECT * FROM mods WHERE id=?");
+        $stmt->execute([$id]);
+        return $stmt->fetch() ?: null;
+    }
+
+    public function upsertMod(int $serverId, string $modId, array $d): array {
+        $this->pdo->prepare("
+            INSERT INTO mods (server_id, mod_id, name, description, preview_url, source, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(server_id, mod_id) DO UPDATE SET
+                name=excluded.name, description=excluded.description,
+                preview_url=excluded.preview_url, source=excluded.source,
+                status=excluded.status
+        ")->execute([
+            $serverId, $modId,
+            $d['name'] ?? '', $d['description'] ?? '',
+            $d['preview_url'] ?? '', $d['source'] ?? 'steam',
+            $d['status'] ?? 'pending',
+        ]);
+        $stmt = $this->pdo->prepare("SELECT * FROM mods WHERE server_id=? AND mod_id=?");
+        $stmt->execute([$serverId, $modId]);
+        return $stmt->fetch();
+    }
+
+    public function setModStatus(int $id, string $status): void {
+        $this->pdo->prepare("UPDATE mods SET status=? WHERE id=?")->execute([$status, $id]);
+    }
+
+    public function deleteMod(int $id): void {
+        $this->pdo->prepare("DELETE FROM mods WHERE id=?")->execute([$id]);
     }
 }

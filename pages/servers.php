@@ -38,6 +38,7 @@
           ?>
           <button class="btn btn-ghost btn-sm" onclick="openConsole(<?= $id ?>, '<?= $consoleType ?>')" title="Console">⌨</button>
           <button class="btn btn-ghost btn-sm" onclick="serverAction(<?= $id ?>,'install')" title="Install/Update">⬇</button>
+          <button class="btn btn-ghost btn-sm" onclick="openModsModal(<?= $id ?>, <?= htmlspecialchars(json_encode($s['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($s['app_id']), ENT_QUOTES) ?>)" title="Workshop Mods">🧩</button>
           <button class="btn btn-ghost btn-sm" onclick="openServerModal(<?= htmlspecialchars(json_encode($s), ENT_QUOTES) ?>)" title="Edit">✎</button>
           <button class="btn btn-danger btn-sm"  onclick="deleteServer(<?= $id ?>, '<?= htmlspecialchars($s['name'], ENT_QUOTES) ?>')" title="Delete">🗑</button>
         </td>
@@ -119,6 +120,78 @@
         <button type="submit" class="btn btn-primary" id="sf-submit">Add Server</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Workshop Mods Modal -->
+<div class="modal-overlay" id="mods-modal" style="display:none" onclick="if(event.target===this)closeModsModal()">
+  <div class="modal modal-xl">
+    <div class="modal-header">
+      <span class="modal-title" id="mods-modal-title">Workshop Mods</span>
+      <button class="btn btn-ghost btn-icon" onclick="closeModsModal()">✕</button>
+    </div>
+    <div class="modal-body" style="gap:0">
+
+      <!-- Add mod panel -->
+      <div class="settings-section-title" style="margin-bottom:10px">Add Mod</div>
+      <div id="mods-source-tabs" class="" style="display:flex;gap:6px;margin-bottom:12px">
+        <button class="btn btn-sm btn-primary"  id="mods-tab-steam"  onclick="setModSource('steam')">Steam Workshop</button>
+        <button class="btn btn-sm btn-ghost"    id="mods-tab-bohemia" onclick="setModSource('bohemia')">Bohemia Workshop</button>
+      </div>
+
+      <div id="mods-add-section" style="background:var(--bg-section,rgba(0,0,0,.2));border-radius:var(--radius);padding:14px;margin-bottom:18px">
+        <div class="form-row" style="align-items:flex-end">
+          <div class="form-group" style="flex:1">
+            <label class="form-label" id="mods-id-label">Steam Workshop URL or Item ID</label>
+            <input class="form-control" type="text" id="mods-add-id" placeholder="e.g. 1234567890 or full URL">
+          </div>
+          <div class="form-group">
+            <label class="form-label">&nbsp;</label>
+            <button class="btn btn-ghost" onclick="lookupMod()">Look Up</button>
+          </div>
+        </div>
+        <div id="mods-preview" style="display:none;gap:12px;align-items:flex-start;margin-top:10px">
+          <img id="mods-preview-img" src="" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:var(--radius);flex-shrink:0">
+          <div style="flex:1;min-width:0">
+            <div id="mods-preview-name" style="font-weight:700;color:var(--text-bright);margin-bottom:4px"></div>
+            <div id="mods-preview-desc" style="font-size:.8rem;color:var(--text-muted);white-space:pre-wrap"></div>
+            <a id="mods-preview-link" href="#" target="_blank" rel="noopener noreferrer" style="font-size:.8rem">View on Workshop ↗</a>
+          </div>
+        </div>
+        <div id="mods-manual-name" style="display:none" class="form-group">
+          <label class="form-label">Mod Name <span class="required">*</span></label>
+          <input class="form-control" type="text" id="mods-manual-name-input" placeholder="e.g. ACE3">
+        </div>
+        <div id="mods-add-error" class="alert alert-error" style="display:none;margin-top:8px"></div>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn btn-primary" id="mods-add-btn" onclick="addMod()" style="display:none">Add to Server</button>
+        </div>
+      </div>
+
+      <!-- Installed mod list -->
+      <div class="settings-section-title" style="margin-bottom:10px">Installed Mods <span id="mods-count" style="font-size:.8rem;font-weight:400;color:var(--text-muted)"></span></div>
+      <div id="mods-list">Loading…</div>
+    </div>
+    <div class="modal-footer">
+      <span id="mods-footer-hint" style="flex:1;font-size:.8rem;color:var(--text-muted)"></span>
+      <button class="btn btn-ghost" onclick="closeModsModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mod Install Console Modal -->
+<div class="modal-overlay" id="mod-console-modal" style="display:none" onclick="if(event.target===this)closeModConsole()">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="mod-console-title">Downloading Mod…</span>
+      <button class="btn btn-ghost btn-icon" onclick="closeModConsole()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="console-wrapper" id="mod-console-output"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModConsole()">Close</button>
+    </div>
   </div>
 </div>
 

@@ -439,3 +439,240 @@ function closeConsole() {
 
 // Keep old name as alias so any other callers don't break
 function closeConsoleSSE() { stopConsolePolling(); }
+
+// ── Workshop Mods modal ───────────────────────────────────────────────────────
+let _modsServerId  = null;
+let _modsAppId     = null;
+let _modsSource    = 'steam';      // 'steam' | 'bohemia'
+let _lookedUpMod   = null;         // last successful lookup result
+let _modConsolePoll = null;
+
+async function openModsModal(serverId, serverName, appId) {
+  _modsServerId = serverId;
+  _modsAppId    = String(appId);
+  _lookedUpMod  = null;
+
+  document.getElementById('mods-modal-title').textContent = serverName + ' — Workshop Mods';
+  document.getElementById('mods-add-id').value = '';
+  document.getElementById('mods-preview').style.display = 'none';
+  document.getElementById('mods-add-btn').style.display = 'none';
+  document.getElementById('mods-add-error').style.display = 'none';
+  document.getElementById('mods-manual-name').style.display = 'none';
+  document.getElementById('mods-list').textContent = 'Loading…';
+
+  // Detect source: Arma Reforger uses Bohemia Workshop; other games use Steam
+  const isBohemia = _modsAppId === '1874900';
+  setModSource(isBohemia ? 'bohemia' : 'steam');
+
+  // Footer hint for Arma Reforger
+  const hint = document.getElementById('mods-footer-hint');
+  if (hint) hint.textContent = isBohemia
+    ? 'Mods are listed in config.json — the server downloads them automatically on next start.'
+    : 'Mods are downloaded to the SteamCMD workshop cache. Add them to your launch args if required.';
+
+  openModal('mods-modal');
+  await refreshModList();
+}
+
+function setModSource(src) {
+  _modsSource = src;
+  _lookedUpMod = null;
+  document.getElementById('mods-preview').style.display = 'none';
+  document.getElementById('mods-add-btn').style.display = 'none';
+  document.getElementById('mods-add-id').value = '';
+  document.getElementById('mods-add-error').style.display = 'none';
+
+  const steamTab   = document.getElementById('mods-tab-steam');
+  const bohemiaTab = document.getElementById('mods-tab-bohemia');
+  const label      = document.getElementById('mods-id-label');
+  const manualName = document.getElementById('mods-manual-name');
+
+  if (src === 'steam') {
+    steamTab.className   = 'btn btn-sm btn-primary';
+    bohemiaTab.className = 'btn btn-sm btn-ghost';
+    label.textContent    = 'Steam Workshop URL or Item ID';
+    manualName.style.display = 'none';
+    document.getElementById('mods-add-id').placeholder = 'e.g. 1234567890 or full URL';
+  } else {
+    steamTab.className   = 'btn btn-sm btn-ghost';
+    bohemiaTab.className = 'btn btn-sm btn-primary';
+    label.textContent    = 'Bohemia Workshop Mod ID';
+    manualName.style.display = '';
+    document.getElementById('mods-add-id').placeholder = 'e.g. 59A2F27A88A0DD57';
+    // For Bohemia we skip lookup — show the Add button immediately when user types an ID
+    document.getElementById('mods-add-id').oninput = () => {
+      const v = document.getElementById('mods-add-id').value.trim();
+      document.getElementById('mods-add-btn').style.display = v ? '' : 'none';
+    };
+  }
+}
+
+async function lookupMod() {
+  const raw = document.getElementById('mods-add-id').value.trim();
+  if (!raw) return;
+  const errEl = document.getElementById('mods-add-error');
+  errEl.style.display = 'none';
+
+  // Extract numeric ID from a full Steam Workshop URL
+  const idMatch = raw.match(/\d{6,}/);
+  const workshopId = idMatch ? idMatch[0] : raw;
+
+  try {
+    const mod = await api(`${BASE}/api/mods.php?action=lookup&workshop_id=${encodeURIComponent(workshopId)}`);
+    _lookedUpMod = mod;
+
+    const preview = document.getElementById('mods-preview');
+    document.getElementById('mods-preview-name').textContent = mod.name;
+    document.getElementById('mods-preview-desc').textContent = mod.description;
+    document.getElementById('mods-preview-link').href = mod.workshop_url;
+    const img = document.getElementById('mods-preview-img');
+    if (mod.preview_url) { img.src = mod.preview_url; img.style.display = ''; }
+    else img.style.display = 'none';
+    preview.style.display = 'flex';
+    document.getElementById('mods-add-btn').style.display = '';
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'flex';
+    _lookedUpMod = null;
+    document.getElementById('mods-add-btn').style.display = 'none';
+  }
+}
+
+async function addMod() {
+  const errEl = document.getElementById('mods-add-error');
+  errEl.style.display = 'none';
+
+  let modData;
+  if (_modsSource === 'steam' && _lookedUpMod) {
+    modData = { ..._lookedUpMod, source: 'steam' };
+  } else {
+    // Bohemia / manual
+    const modId = document.getElementById('mods-add-id').value.trim();
+    const name  = document.getElementById('mods-manual-name-input')?.value.trim() || modId;
+    if (!modId) { errEl.textContent = 'Mod ID is required'; errEl.style.display = 'flex'; return; }
+    if (!name)  { errEl.textContent = 'Mod name is required'; errEl.style.display = 'flex'; return; }
+    modData = { mod_id: modId, name, source: 'bohemia' };
+  }
+
+  try {
+    await api(`${BASE}/api/mods.php?server_id=${_modsServerId}`, {
+      method: 'POST',
+      body: JSON.stringify(modData),
+    });
+    toast('Mod added');
+    document.getElementById('mods-add-id').value = '';
+    document.getElementById('mods-manual-name-input') && (document.getElementById('mods-manual-name-input').value = '');
+    document.getElementById('mods-preview').style.display = 'none';
+    document.getElementById('mods-add-btn').style.display = 'none';
+    _lookedUpMod = null;
+    await refreshModList();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'flex';
+  }
+}
+
+async function refreshModList() {
+  const listEl = document.getElementById('mods-list');
+  try {
+    const mods = await api(`${BASE}/api/mods.php?server_id=${_modsServerId}`);
+    const countEl = document.getElementById('mods-count');
+    if (countEl) countEl.textContent = mods.length ? `(${mods.length})` : '';
+
+    if (!mods.length) {
+      listEl.innerHTML = '<p class="form-hint" style="margin:0">No mods added yet.</p>';
+      return;
+    }
+
+    listEl.innerHTML = `
+      <table class="table" style="margin:0">
+        <thead><tr><th style="width:60px"></th><th>Name</th><th>ID</th><th>Source</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${mods.map(m => `
+            <tr id="mod-row-${m.id}">
+              <td>${m.preview_url
+                ? `<img src="${escHtml(m.preview_url)}" style="width:48px;height:48px;object-fit:cover;border-radius:var(--radius)">`
+                : `<div style="width:48px;height:48px;background:var(--bg-hover,#2a2a3a);border-radius:var(--radius)"></div>`
+              }</td>
+              <td><strong>${escHtml(m.name)}</strong></td>
+              <td><code style="font-size:.78rem">${escHtml(m.mod_id)}</code></td>
+              <td><span class="badge">${escHtml(m.source)}</span></td>
+              <td><span class="status-badge status-${escHtml(m.status)}" id="mod-status-${m.id}">${escHtml(m.status)}</span></td>
+              <td style="white-space:nowrap">
+                ${m.source === 'steam'
+                  ? `<button class="btn btn-ghost btn-sm" onclick="installMod(${m.id}, '${escHtml(m.name)}')" title="Download via SteamCMD">⬇</button>`
+                  : ''}
+                <button class="btn btn-danger btn-sm" onclick="removeMod(${m.id}, '${escHtml(m.name)}')" title="Remove">🗑</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    listEl.textContent = 'Error loading mods: ' + e.message;
+  }
+}
+
+async function installMod(modId, modName) {
+  try {
+    await api(`${BASE}/api/mods.php?id=${modId}&action=install`, { method: 'POST' });
+    openModConsole(modId, modName);
+    const badge = document.getElementById('mod-status-' + modId);
+    if (badge) { badge.textContent = 'installing'; badge.className = 'status-badge status-installing'; }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openModConsole(modId, modName) {
+  document.getElementById('mod-console-title').textContent = 'Downloading: ' + modName;
+  const out = document.getElementById('mod-console-output');
+  out.textContent = '';
+  openModal('mod-console-modal');
+
+  stopModConsolePoll();
+  let offset = 0;
+  async function poll() {
+    try {
+      const data = await (await fetch(`${BASE}/api/mods.php?id=${modId}&action=log&offset=${offset}`)).json();
+      if (data.lines?.length) {
+        data.lines.forEach(l => { out.textContent += l + '\n'; });
+        out.scrollTop = out.scrollHeight;
+      }
+      offset = data.offset ?? offset;
+      if (data.done) {
+        stopModConsolePoll();
+        await refreshModList();
+        const statusText = (out.textContent || '').includes('Success.') ? 'installed' : 'error';
+        toast(statusText === 'installed' ? modName + ' downloaded successfully' : modName + ' download failed', statusText === 'installed' ? 'success' : 'error');
+      }
+    } catch {}
+  }
+  poll();
+  _modConsolePoll = setInterval(poll, 1500);
+}
+
+function stopModConsolePoll() {
+  if (_modConsolePoll) { clearInterval(_modConsolePoll); _modConsolePoll = null; }
+}
+
+function closeModConsole() {
+  stopModConsolePoll();
+  closeModal('mod-console-modal');
+}
+
+async function removeMod(modId, modName) {
+  if (!confirm(`Remove mod "${modName}"?`)) return;
+  try {
+    await api(`${BASE}/api/mods.php?id=${modId}`, { method: 'DELETE' });
+    const row = document.getElementById('mod-row-' + modId);
+    if (row) row.remove();
+    await refreshModList();
+    toast('Mod removed');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function closeModsModal() {
+  closeModal('mods-modal');
+  _modsServerId = null;
+  _modsAppId    = null;
+  _lookedUpMod  = null;
+}
+
