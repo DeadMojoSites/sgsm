@@ -1,6 +1,6 @@
 services:
   game-server-manager:
-    image: ghcr.io/mbrown22073/sgsm:latest
+    image: ghcr.io/deadmojo/sgsm:latest
     container_name: game-server-manager
     ports:
       - "8080:80"

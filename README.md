@@ -39,7 +39,7 @@ Download or copy `docker-compose.yml` from this repository.
 docker compose up -d
 ```
 
-The image is pulled from GitHub Container Registry (`ghcr.io/mbrown22073/sgsm:latest`). No build step needed.
+The image is pulled from GitHub Container Registry (`ghcr.io/deadmojo/sgsm:latest`). No build step needed.
 
 ### 3. Open the web UI
 
@@ -57,7 +57,7 @@ On first launch the setup wizard will ask you to:
 ```yaml
 services:
   game-server-manager:
-    image: ghcr.io/mbrown22073/sgsm:latest
+    image: ghcr.io/deadmojo/sgsm:latest
     container_name: game-server-manager
     ports:
       - "8080:80"
@@ -216,7 +216,7 @@ ports:
 When a new image is published to GHCR:
 
 ```bash
-docker pull ghcr.io/mbrown22073/sgsm:latest
+docker pull ghcr.io/deadmojo/sgsm:latest
 docker stop game-server-manager
 docker rm game-server-manager
 docker compose up -d

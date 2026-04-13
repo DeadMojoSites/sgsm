@@ -136,7 +136,7 @@
     <div class="card-body">
       <div class="form-group">
         <label class="form-label">Git Repository URL (optional override)</label>
-        <input class="form-control" type="text" id="cfg-update_repo_url" value="<?= htmlspecialchars($cfg['update_repo_url'] ?? '') ?>" placeholder="https://github.com/MBrown22073/sgsm">
+        <input class="form-control" type="text" id="cfg-update_repo_url" value="<?= htmlspecialchars($cfg['update_repo_url'] ?? '') ?>" placeholder="https://github.com/deadmojo/sgsm">
       </div>
       <button class="btn btn-primary" onclick="saveSettings(['update_repo_url'])">Save URL</button>
       <button class="btn btn-ghost" onclick="runUpdate()" style="margin-left:8px">Pull Updates Now</button>

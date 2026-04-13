@@ -85,7 +85,7 @@ if ($action === 'update' && $method === 'POST') {
     $log = DATA_DIR . '/logs/update.log';
     if (!is_dir(dirname($log))) mkdir(dirname($log), 0755, true);
 
-    $image = 'ghcr.io/mbrown22073/sgsm:latest';
+    $image = 'ghcr.io/deadmojo/sgsm:latest';
     $msg   = implode("\n", [
         '[' . date('Y-m-d H:i:s') . '] --- Update check started ---',
         'This application runs inside a Docker container.',
