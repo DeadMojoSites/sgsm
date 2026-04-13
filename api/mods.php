@@ -24,22 +24,49 @@ if ($method === 'GET' && $action === 'lookup') {
     $workshopId = trim($_GET['workshop_id'] ?? '');
     if (!$workshopId) jsonError('workshop_id is required');
 
-    $ch = curl_init('https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => http_build_query(['itemcount' => 1, 'publishedfileids[0]' => $workshopId]),
-        CURLOPT_TIMEOUT        => 8,
-        CURLOPT_SSL_VERIFYPEER => true,
-    ]);
-    $raw = curl_exec($ch);
-    $err = curl_error($ch);
-    curl_close($ch);
+    $postData = http_build_query(['itemcount' => 1, 'publishedfileids[0]' => $workshopId]);
+    $raw      = false;
+    $curlErr  = '';
 
-    if ($err || !$raw) jsonError('Could not reach Steam API');
+    if (function_exists('curl_init')) {
+        $ch = curl_init('https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $postData,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/x-www-form-urlencoded'],
+            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $raw     = curl_exec($ch);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+    } else {
+        // Fallback: file_get_contents with stream context
+        $ctx = stream_context_create(['http' => [
+            'method'  => 'POST',
+            'header'  => 'Content-Type: application/x-www-form-urlencoded',
+            'content' => $postData,
+            'timeout' => 10,
+        ]]);
+        $raw = @file_get_contents(
+            'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/',
+            false, $ctx
+        );
+        if ($raw === false) $curlErr = 'file_get_contents failed — allow_url_fopen may be off';
+    }
+
+    if (!$raw) jsonError('Could not reach Steam API: ' . ($curlErr ?: 'empty response'));
+
     $data = json_decode($raw, true);
-    $file = $data['response']['publishedfiledetails'][0] ?? null;
-    if (!$file || ($file['result'] ?? 0) !== 1) jsonError('Workshop item not found or is private');
+    if (!is_array($data)) jsonError('Steam API returned invalid JSON');
+
+    $file   = $data['response']['publishedfiledetails'][0] ?? null;
+    $result = (int)($file['result'] ?? 0);
+
+    if (!$file)        jsonError('Steam API returned no details for that ID');
+    if ($result === 9) jsonError('This item requires payment and cannot be looked up anonymously');
+    if ($result !== 1) jsonError('Workshop item not found or is private (Steam result code: ' . $result . ')');
 
     jsonResponse([
         'mod_id'      => $workshopId,

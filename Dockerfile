@@ -16,7 +16,8 @@ RUN dpkg --add-architecture i386 && \
         lib32gcc-s1 \
         git \
         libsqlite3-dev \
-    && docker-php-ext-install pdo pdo_sqlite \
+        libcurl4-openssl-dev \
+    && docker-php-ext-install pdo pdo_sqlite curl \
     && rm -rf /var/lib/apt/lists/*
 
 # SteamCMD directory — binary is downloaded on first install via helpers.php
