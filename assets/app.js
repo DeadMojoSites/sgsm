@@ -380,14 +380,35 @@ async function submitServerForm(e) {
 }
 
 // ── Server actions (start/stop/restart/install/cancel-install) ────────────────
-async function serverAction(id, action) {
+async function serverAction(id, action, body = null) {
   try {
-    await api(`${BASE}/api/servers.php?id=${id}&action=${action}`, { method: 'POST' });
+    const opts = { method: 'POST' };
+    if (body) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(body); }
+    await api(`${BASE}/api/servers.php?id=${id}&action=${action}`, opts);
     const labels = { start:'Starting', stop:'Stopping', restart:'Restarting', install:'Installing', 'cancel-install':'Cancelling' };
     toast((labels[action] || action) + '…');
     if (action === 'install') openConsole(id, 'install');
     else setTimeout(() => location.reload(), 1000);
   } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Install dialog (Steam Guard code prompt) ─────────────────────────────────
+let _installServerId = null;
+function openInstallDialog(id) {
+  _installServerId = id;
+  document.getElementById('steam-guard-code').value = '';
+  document.getElementById('install-dialog').style.display = 'flex';
+  setTimeout(() => document.getElementById('steam-guard-code').focus(), 50);
+}
+function closeInstallDialog() {
+  document.getElementById('install-dialog').style.display = 'none';
+  _installServerId = null;
+}
+async function confirmInstall() {
+  if (!_installServerId) return;
+  const code = document.getElementById('steam-guard-code').value.trim();
+  closeInstallDialog();
+  await serverAction(_installServerId, 'install', code ? { steam_guard_code: code } : null);
 }
 
 // ── Delete server ─────────────────────────────────────────────────────────────

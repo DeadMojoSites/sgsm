@@ -148,10 +148,11 @@ if ($method === 'POST' && $id > 0 && $action !== '') {
         case 'install':
             if ($s['status'] === 'running')    jsonError('Stop the server before installing');
             if ($s['status'] === 'installing') jsonError('Installation already in progress');
-            $steamUser = $db->getSetting('steam_username') ?: '';
-            $steamPass = decryptValue($db->getSetting('steam_password') ?: '');
+            $steamUser      = $db->getSetting('steam_username') ?: '';
+            $steamPass      = decryptValue($db->getSetting('steam_password') ?: '');
+            $steamGuardCode = trim(getBody()['steam_guard_code'] ?? '');
             try {
-                $containerId = installServer($s, $steamUser, $steamPass);
+                $containerId = installServer($s, $steamUser, $steamPass, $steamGuardCode);
                 $db->updateServer($id, ['status' => 'installing', 'container_id' => $containerId]);
                 jsonResponse(['ok' => true, 'container_id' => $containerId]);
             } catch (RuntimeException $e) {

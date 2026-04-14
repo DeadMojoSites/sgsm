@@ -288,7 +288,7 @@ function startServer(array $server): string {
  * Run a SteamCMD install/update inside a dedicated container.
  * Returns the container ID (the container exits when the install completes).
  */
-function installServer(array $server, string $steamUser = '', string $steamPass = ''): string {
+function installServer(array $server, string $steamUser = '', string $steamPass = '', string $steamGuardCode = ''): string {
     $id         = (int)$server['id'];
     $installDir = rtrim($server['install_dir'], '/');
     $appId      = (int)$server['app_id'];
@@ -306,6 +306,7 @@ function installServer(array $server, string $steamUser = '', string $steamPass 
     $useLogin = !empty($steamUser) && !empty($steamPass);
     $loginCmd = $useLogin
         ? '+login ' . escapeshellarg($steamUser) . ' ' . escapeshellarg($steamPass)
+          . (!empty($steamGuardCode) ? ' ' . escapeshellarg($steamGuardCode) : '')
         : '+login anonymous';
 
     $note = $useLogin

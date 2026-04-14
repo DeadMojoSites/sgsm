@@ -42,7 +42,7 @@ $isAdmin = isAdmin();
           ?>
           <button class="btn btn-ghost btn-sm" onclick="openConsole(<?= $id ?>, '<?= $consoleType ?>')" title="Console">⌨</button>
           <?php if ($isAdmin): ?>
-          <button class="btn btn-ghost btn-sm" onclick="serverAction(<?= $id ?>,'install')" title="Install/Update">⬇</button>
+          <button class="btn btn-ghost btn-sm" onclick="openInstallDialog(<?= $id ?>)" title="Install/Update">⬇</button>
           <button class="btn btn-ghost btn-sm" onclick="openModsModal(<?= $id ?>, <?= htmlspecialchars(json_encode($s['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($s['app_id']), ENT_QUOTES) ?>)" title="Workshop Mods">🧩</button>
           <button class="btn btn-ghost btn-sm" onclick="openServerDetail(<?= $id ?>)" title="Manage">⚙</button>
           <button class="btn btn-ghost btn-sm" onclick="openServerModal(<?= htmlspecialchars(json_encode($s), ENT_QUOTES) ?>)" title="Edit">✎</button>
@@ -334,6 +334,30 @@ $isAdmin = isAdmin();
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeSetupModal()">Skip</button>
       <button class="btn btn-primary" id="setup-save" onclick="saveSetupConfig()">Save &amp; Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Steam Guard / Install Dialog -->
+<div id="install-dialog" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeInstallDialog()">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3 class="modal-title">Install / Update Server</h3>
+      <button class="modal-close" onclick="closeInstallDialog()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 1rem;color:var(--text-muted);font-size:.9rem">
+        If your Steam account uses the mobile authenticator, open the Steam app now and enter the current Guard code below before clicking Install.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Steam Guard Code <span style="font-weight:400;color:var(--text-muted)">(leave blank if not needed)</span></label>
+        <input type="text" id="steam-guard-code" class="form-input" maxlength="10"
+               placeholder="e.g. AB3KP" autocomplete="off" style="letter-spacing:.15em;font-size:1.1rem">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeInstallDialog()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmInstall()">Install</button>
     </div>
   </div>
 </div>
