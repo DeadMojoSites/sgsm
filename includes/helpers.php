@@ -348,7 +348,7 @@ function installServer(array $server, string $steamUser = '', string $steamPass 
         'HostConfig' => [
             'Binds' => [
                 $hostInstallDir . ':/server',
-                $steamAuthVolume . ':/home/steam/Steam',  // persist auth tokens
+                $steamAuthVolume . ':/root/.local/share/Steam',  // persist auth tokens (steamcmd runs as root)
             ],
             'NetworkMode' => 'bridge', // needs internet for download
         ],
